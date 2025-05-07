@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import toast from 'react-hot-toast'; // Importar toast
+import toast from 'react-hot-toast';
 import { supabase, VehiculoFormData, Vehiculo } from "../lib/supabase";
 import {
   createVehiculo as apiCreateVehiculo,
@@ -13,302 +13,273 @@ import {
   fetchVehiculosVendidos as apiFetchVehiculosVendidos,
 } from "../services/vehicleService";
 
-// Estado inicial vacío y limpio
 const initialFormData: VehiculoFormData = {
     linea: "", marca: "", modelo: "", km: "", tipo_caja: "", valor_venta: "",
     propietario_ubicacion: "", descripcion: "", soat: "", tecno: "", color: "",
     lugar_matricula: "", reporte: false, prenda: false, motor: "",
-    estado: "disponible", imagenes: "", placa: "", 
+    estado: "disponible", imagenes: "", placa: "",
 };
 
-export function useVehicles() {
-  // Estados Generales
-  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
-  const [isLoadingList, setIsLoadingList] = useState(true); // Carga inicial de la lista
-  const [generalError, setGeneralError] = useState<string | null>(null);
-    
-  const [vehiculosVendidos, setVehiculosVendidos] = useState<Vehiculo[]>([]); // <-- AÑADIDO
-  const [isLoadingVendidos, setIsLoadingVendidos] = useState(false);          // <-- AÑADIDO
-  const [activeTab, setActiveTab] = useState<'inventario' | 'vendidos'>('inventario'); // <-- AÑADIDO
-  const [filtroMes, setFiltroMes] = useState<number>(new Date().getMonth() + 1); // Mes actual por defecto
-  const [filtroAnio, setFiltroAnio] = useState<number>(new Date().getFullYear()); // Año actual por defecto
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+    return (error as { message: string }).message || "Error con mensaje vacío.";
+  }
+  try {
+    const errorString = String(error);
+    if (errorString !== '[object Object]') return errorString;
+  } catch (e) { /* Ignorar */ }
+  return "Ocurrió un error desconocido.";
+}
 
-  // Estados del Formulario
+export function useVehicles() {
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  const [isLoadingList, setIsLoadingList] = useState(true);
+  const [vehiculosVendidos, setVehiculosVendidos] = useState<Vehiculo[]>([]);
+  const [isLoadingVendidos, setIsLoadingVendidos] = useState(false);
+  const [generalError, setGeneralError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'inventario' | 'vendidos'>('inventario');
+  const [filtroMes, setFiltroMes] = useState<number>(new Date().getMonth() + 1);
+  const [filtroAnio, setFiltroAnio] = useState<number>(new Date().getFullYear());
   const [formData, setFormData] = useState<VehiculoFormData>(initialFormData);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [editId, setEditId] = useState<number | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Para el botón de submit
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- Carga Inicial ---
   const loadVehiculos = useCallback(async () => {
+    console.log("[useVehicles] Cargando vehículos de inventario...");
     setIsLoadingList(true);
     setGeneralError(null);
     try {
-      const { data, error } = await apiFetchVehiculos();
-      if (error) throw error;
-      setVehiculos(data || []);
-    } catch (err: any) {
-      console.error("Error cargando vehículos:", err);
-      const errorMsg = err.message || "Error desconocido al cargar vehículos.";
+      const { data, error: fetchError } = await apiFetchVehiculos();
+      if (fetchError) throw fetchError;
+      const inventario = data?.filter(v => !v.vendido) || [];
+      setVehiculos(inventario);
+      console.log("[useVehicles] Vehículos de inventario cargados:", inventario.length);
+    } catch (err: unknown) {
+      console.error("Error cargando vehículos de inventario:", err);
+      const errorMsg = getErrorMessage(err);
       setGeneralError(errorMsg);
-      toast.error(errorMsg); // Mostrar error con toast
+      toast.error(`Error inventario: ${errorMsg}`);
     } finally {
       setIsLoadingList(false);
     }
   }, []);
 
-    // --- Carga de Vehículos Vendidos ---
-    const loadVehiculosVendidos = useCallback(async (month?: number, year?: number) => {
-      setIsLoadingVendidos(true);
-      setGeneralError(null); // Podrías tener un error específico para esta lista
-      try {
-        // Usar los estados de filtro si no se pasan argumentos
-        const currentMonth = month ?? filtroMes;
-        const currentYear = year ?? filtroAnio;
-        const data = await apiFetchVehiculosVendidos({ month: currentMonth, year: currentYear });
-        setVehiculosVendidos(data);
-      } catch (err: any) {
-        console.error("Error cargando vehículos vendidos:", err);
-        const errorMsg = err.message || "Error desconocido al cargar vehículos vendidos.";
-        // setGeneralError(errorMsg); // O un estado de error específico
-        toast.error(errorMsg);
-      } finally {
-        setIsLoadingVendidos(false);
-      }
-    }, [filtroMes, filtroAnio]); // Añadir dependencias si usas estados de filtro
+  const loadVehiculosVendidos = useCallback(async (month?: number, year?: number) => {
+    const currentMonth = month ?? filtroMes;
+    const currentYear = year ?? filtroAnio;
+    console.log(`[useVehicles] Cargando vehículos vendidos para ${currentMonth}/${currentYear}...`);
+    setIsLoadingVendidos(true);
+    try {
+      const data = await apiFetchVehiculosVendidos({ month: currentMonth, year: currentYear });
+      setVehiculosVendidos(data);
+      console.log("[useVehicles] Vehículos vendidos cargados:", data.length);
+    } catch (err: unknown) {
+      console.error("Error cargando vehículos vendidos:", err);
+      const errorMsg = getErrorMessage(err);
+      toast.error(`Error vendidos: ${errorMsg}`);
+    } finally {
+      setIsLoadingVendidos(false);
+    }
+  }, [filtroMes, filtroAnio]);
 
-    useEffect(() => {
-      if (activeTab === 'inventario') {
-        loadVehiculos();
-      } else if (activeTab === 'vendidos') {
-        loadVehiculosVendidos();
-      }
-    }, [activeTab, loadVehiculos, loadVehiculosVendidos]);
+  useEffect(() => {
+    console.log(`[useVehicles] useEffect - Pestaña activa: ${activeTab}`);
+    if (activeTab === 'inventario') {
+      loadVehiculos();
+    } else if (activeTab === 'vendidos') {
+      loadVehiculosVendidos();
+    }
+  }, [activeTab, loadVehiculos, loadVehiculosVendidos]);
 
-  // --- Manejo del Formulario ---
   const updateFormField = useCallback(<K extends keyof VehiculoFormData>(field: K, value: VehiculoFormData[K]) => {
-     // Validaciones/transformaciones simples aquí si se desea (ej: placa a mayúsculas)
-     // if (field === 'placa') value = (value as string).toUpperCase();
     setFormData((prev) => ({ ...prev, [field]: value }));
   }, []);
 
   const handleImageChange = useCallback((file: File | null) => {
-      setImageFile(file);
-      // Si se cambia la imagen, limpiamos la URL existente en el form data
-      // para asegurar que se use el archivo nuevo si se guarda.
-      // Si se cancela, se puede restaurar o dejar vacío.
-      // OJO: Esto asume que solo manejas UNA imagen principal.
-      if(file) {
-        updateFormField('imagenes', '');
-      }
+    setImageFile(file);
+    if (file) {
+      updateFormField('imagenes', ''); // Limpia la URL de imagen existente si se selecciona un nuevo archivo
+    }
   }, [updateFormField]);
 
-
   const clearForm = useCallback(() => {
+    console.log("[useVehicles] Limpiando formulario.");
     setFormData(initialFormData);
     setImageFile(null);
     setEditId(null);
-    // Considera si quieres limpiar errores específicos del formulario aquí
+    // setIsSubmitting(false); // No es necesario resetear isSubmitting aquí, se hace en handleSubmit
   }, []);
 
-   const startEdit = useCallback((veh: Vehiculo) => {
-      window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll al formulario
-      setEditId(veh.id);
-      // Convertir números/booleanos a string/boolean para el estado del formulario
-      setFormData({
-        linea: veh.linea || "",
-        marca: veh.marca || "",
-        modelo: veh.modelo?.toString() ?? "", // Convertir a string
-        km: veh.km?.toString() ?? "",         // Convertir a string
-        tipo_caja: veh.tipo_caja || "",
-        valor_venta: veh.valor_venta?.toString() ?? "", // Convertir a string
-        propietario_ubicacion: veh.propietario_ubicacion || "",
-        descripcion: veh.descripcion || "",
-        soat: veh.soat || "", // El input date maneja 'YYYY-MM-DD'
-        tecno: veh.tecno || "",
-        color: veh.color || "",
-        lugar_matricula: veh.lugar_matricula || "",
-        reporte: veh.reporte ?? false,
-        prenda: veh.prenda ?? false,
-        motor: veh.motor || "",
-        estado: veh.estado || "disponible",
-        imagenes: veh.imagenes || "", // Mantener la URL existente
-        placa: veh.placa || "",
-      });
-      setImageFile(null); // Limpiar archivo seleccionado al empezar a editar
+  const startEdit = useCallback((veh: Vehiculo) => {
+    console.log("[useVehicles] Iniciando edición para vehículo ID:", veh.id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setEditId(veh.id);
+    setFormData({
+      linea: veh.linea || "", marca: veh.marca || "",
+      modelo: veh.modelo?.toString() ?? "", km: veh.km?.toString() ?? "",
+      tipo_caja: veh.tipo_caja || "", valor_venta: veh.valor_venta?.toString() ?? "",
+      propietario_ubicacion: veh.propietario_ubicacion || "", // Ajusta si propietario_ubicacion es un objeto
+      descripcion: veh.descripcion || "", soat: veh.soat || "", tecno: veh.tecno || "",
+      color: veh.color || "", lugar_matricula: veh.lugar_matricula || "",
+      reporte: veh.reporte ?? false, prenda: veh.prenda ?? false,
+      motor: veh.motor || "", estado: veh.estado || "disponible",
+      imagenes: veh.imagenes || "", placa: veh.placa || "",
+    });
+    setImageFile(null);
   }, []);
 
-  // --- Acciones CRUD ---
-
-  // Subir imagen a Supabase Storage (función auxiliar)
   const uploadImage = async (file: File): Promise<string> => {
-    const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`; // Nombre único y limpio
+    const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
     const filePath = `autos/${fileName}`;
-
+    console.log("[useVehicles] Subiendo imagen a:", filePath);
     const { error: uploadError } = await supabase.storage
-      .from("escuderia-autos") // Asegúrate que este bucket existe y tiene políticas adecuadas
-      .upload(filePath, file, {
-          cacheControl: '3600', // Opcional: Control de caché
-          upsert: false // Cambia a true si quieres permitir sobrescribir
-      });
+      .from("escuderia-autos")
+      .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
     if (uploadError) {
-      console.error("Error subiendo imagen:", uploadError);
-      throw new Error(`Error al subir imagen: ${uploadError.message}`);
+      console.error("Error subiendo imagen a Supabase Storage:", uploadError);
+      throw new Error(getErrorMessage(uploadError));
     }
-
-    // Obtener URL pública
-    const { data: urlData } = supabase.storage
-      .from("escuderia-autos")
-      .getPublicUrl(filePath);
-
+    const { data: urlData } = supabase.storage.from("escuderia-autos").getPublicUrl(filePath);
     if (!urlData?.publicUrl) {
+      console.error("No se pudo obtener la URL pública después de subir:", filePath);
       throw new Error("No se pudo obtener la URL pública de la imagen subida.");
     }
-    console.log("Imagen subida, URL:", urlData.publicUrl)
+    console.log("[useVehicles] Imagen subida, URL pública:", urlData.publicUrl);
     return urlData.publicUrl;
   };
 
-
   const handleSubmit = async () => {
+    console.log("[useVehicles] Iniciando handleSubmit:", editId ? `Editando ID ${editId}` : "Creando nuevo");
     setIsSubmitting(true);
     setGeneralError(null);
+    const toastAction = editId ? 'actualizando' : 'creando';
     const toastId = toast.loading(editId ? 'Actualizando vehículo...' : 'Creando vehículo...');
 
     try {
-        let imageUrl: string | null = formData.imagenes || null;
+      let imageUrl: string | null = formData.imagenes || null; // URL existente o null
+      if (imageFile) {
+        console.log("[useVehicles] Subiendo nueva imagen...");
+        imageUrl = await uploadImage(imageFile);
+      } else {
+        console.log("[useVehicles] No hay nuevo archivo de imagen, usando URL existente (si hay):", imageUrl);
+      }
 
-        if (imageFile) {
-            imageUrl = await uploadImage(imageFile);
-        }
+      // Construye el objeto de datos para enviar, manteniendo los tipos de VehiculoFormData
+      // La función de servicio (apiCreateVehiculo/apiUpdateVehiculo) se encargará del parseo final.
+      const dataToSend: VehiculoFormData = {
+        ...formData, // Copia todos los campos del formulario actual
+        imagenes: imageUrl || "", // Asegura que 'imagenes' sea string (o el tipo esperado por VehiculoFormData)
+                                   // Si VehiculoFormData.imagenes puede ser null, entonces `imageUrl || null` está bien.
+                                   // Tu VehiculoFormData.imagenes es string, así que '' es mejor que null.
+      };
+      // Los campos como 'modelo', 'km', 'valor_venta' ya están como strings en formData,
+      // que es lo que espera VehiculoFormData.
 
-        if (editId) {
-            // Actualizar (pasamos la URL dentro del objeto, || '' ya está bien aquí)
-            const { error } = await apiUpdateVehiculo(editId, { ...formData, imagenes: imageUrl || '' });
-            if (error) throw error;
-            toast.success('Vehículo actualizado con éxito!', { id: toastId });
-        } else {
-            // Crear
-            // *** CORRECCIÓN AQUÍ: Usar || '' para asegurar que siempre sea string ***
-            const { error } = await apiCreateVehiculo(formData, imageUrl || ''); // Si imageUrl es null, pasa ''
-            if (error) throw error;
-            toast.success('Vehículo creado con éxito!', { id: toastId });
-        }
-
-        clearForm();
-        await loadVehiculos();
-
-    } catch (err: any) {
-        console.error("Error al guardar:", err);
-        const errorMsg = err.message || `Error desconocido al ${editId ? 'actualizar' : 'crear'}.`;
-        setGeneralError(errorMsg);
-        toast.error(errorMsg, { id: toastId });
-    } finally {
-        setIsSubmitting(false);
-    }
-};
-
-
-  const handleDelete = async (id: number): Promise<void> => { // Hacerla async y retornar Promise<void>
-    // El estado de carga se maneja en VehicleList, aquí solo ejecutamos la acción
-    // if (!confirm("¿Seguro que deseas eliminar este vehículo?")) return; // Confirmación mejor en UI
-
-    const vehicleToDelete = vehiculos.find(v => v.id === id);
-    if (!vehicleToDelete) return;
-
-    const toastId = toast.loading(`Eliminando ${vehicleToDelete.marca} ${vehicleToDelete.linea}...`);
-    try {
-      const { error } = await apiDeleteVehiculo(id);
-      if (error) throw error;
-
-      // Opcional: Eliminar imagen de Storage (¡cuidado!)
-      // if (vehicleToDelete.imagenes) {
-      //     const path = vehicleToDelete.imagenes.split('/autos/')[1];
-      //     if (path) await supabase.storage.from("escuderia-autos").remove([`autos/${path}`]);
-      // }
-
-      toast.success('Vehículo eliminado.', { id: toastId });
-      await loadVehiculos(); // Recargar lista
-      if (activeTab === 'vendidos') { // Recargar vendidos solo si es la pestaña activa
+      if (editId) {
+        console.log("[useVehicles] Llamando a apiUpdateVehiculo para ID:", editId, "con datos:", dataToSend);
+        await apiUpdateVehiculo(editId, dataToSend); // Pasa VehiculoFormData
+        toast.success('Vehículo actualizado!', { id: toastId });
+      } else {
+        console.log("[useVehicles] Llamando a apiCreateVehiculo con datos:", dataToSend, "y URL de imagen:", imageUrl);
+        // apiCreateVehiculo espera VehiculoFormData y la URL de imagen por separado.
+        // Asegúrate de que la firma de apiCreateVehiculo sea (formData: VehiculoFormData, imageUrl: string | null)
+        await apiCreateVehiculo(dataToSend, imageUrl);
+        toast.success('Vehículo creado!', { id: toastId });
+      }
+      clearForm();
+      await loadVehiculos();
+      if (activeTab === 'vendidos') {
         await loadVehiculosVendidos();
       }
-    } catch (err: any) {
-      console.error("Error al eliminar vehículo:", err);
-      const errorMsg = err.message || "Error desconocido al eliminar.";
-      setGeneralError(errorMsg); // Podrías tener un estado de error específico para la lista
-      toast.error(errorMsg, { id: toastId });
-    }
-    // El estado de carga (isDeleting) se resetea en el componente VehicleList
-  };
-
-  const handleMarkAsSold = async (id: number): Promise<void> => {
-    const vehicleToSell = vehiculos.find(v => v.id === id);
-    if (!vehicleToSell) {
-        console.warn(`[useVehicles] Vehículo con ID ${id} no encontrado en la lista local para marcar como vendido.`);
-        toast.error("No se pudo encontrar el vehículo especificado.");
-        return;
-    }
-        
-    const toastId = toast.loading(`Marcando ${vehicleToSell.marca} ${vehicleToSell.linea} como vendido...`);
-    // Aquí necesitas una forma de indicar en la UI que ESTE ITEM específico está cargando.
-    // Si usas 'itemBeingMarkedSoldId' como sugerí en la respuesta del modal:
-    // setItemBeingMarkedSoldId(id); // Si este estado lo manejas en VehicleList, VehicleList debe tener una función para setearlo
-
-    setGeneralError(null); // Limpiar errores generales previos
-
-    try {
-      // apiMarcarComoVendido ahora lanza un Error si algo sale mal.
-      // No necesitas desestructurar 'error' aquí.
-      await apiMarcarComoVendido(id); 
-      
-      toast.success('Vehículo marcado como vendido.', { id: toastId });
-      await loadVehiculos(); // Recargar lista para reflejar el cambio
-    } catch (err: any) { // err ahora debería ser una instancia de Error
-      console.error("Error al marcar como vendido (capturado en useVehicles):", err); // Log completo del error
-      
-      // El mensaje de error debería estar en err.message gracias a la modificación en apiMarcarComoVendido
-      const errorMsg = err.message || "Error desconocido al intentar marcar como vendido.";
-      
+    } catch (err: unknown) {
+      console.error(`Error al ${toastAction} vehículo:`, err);
+      const errorMsg = getErrorMessage(err);
       setGeneralError(errorMsg);
       toast.error(errorMsg, { id: toastId });
     } finally {
-      // Asegúrate de limpiar el estado de carga del item específico
-      // Si 'itemBeingMarkedSoldId' se maneja en VehicleList, VehicleList se encarga de limpiarlo.
-      // Si se maneja en este hook, sería:
-      // setItemBeingMarkedSoldId(null);
+      console.log("[useVehicles] Finalizando handleSubmit.");
+      setIsSubmitting(false);
     }
-    // "El estado de carga (isMarkingSold) se resetea en el componente VehicleList"
-    // Esto significa que VehicleList tiene su propio estado para el spinner del botón del item.
-    // Asegúrate que el 'finally' en VehicleList (si la llamada se origina allí)
-    // o aquí (si no hay un nivel intermedio) limpie ese estado.
+  };
+
+  const handleDelete = async (id: number): Promise<void> => {
+    console.log("[useVehicles] Iniciando handleDelete para ID:", id);
+    const vehicleToDelete = vehiculos.find(v => v.id === id) || vehiculosVendidos.find(v => v.id === id);
+    const toastId = toast.loading(`Eliminando ${vehicleToDelete?.marca || 'vehículo'} ${vehicleToDelete?.linea || ''}...`);
+    setGeneralError(null);
+    try {
+      console.log("[useVehicles] Llamando a apiDeleteVehiculo para ID:", id);
+      await apiDeleteVehiculo(id);
+      if (vehicleToDelete?.imagenes) {
+        try {
+          // Intenta parsear la URL de manera más segura
+          let pathToDelete: string | undefined;
+          if (vehicleToDelete.imagenes.includes('/storage/v1/object/public/')) {
+            pathToDelete = vehicleToDelete.imagenes.split('/public/')[1];
+          }
+
+          if (pathToDelete) {
+            const [bucketName, ...filePathParts] = pathToDelete.split('/');
+            const filePath = filePathParts.join('/');
+            if (bucketName && filePath && bucketName === "escuderia-autos") { // Verifica el nombre del bucket
+              console.log(`[useVehicles] Eliminando imagen de Storage: Bucket: ${bucketName}, Path: ${filePath}`);
+              await supabase.storage.from(bucketName).remove([filePath]);
+            } else {
+              console.warn("[useVehicles] No se pudo determinar el bucket o path correcto para eliminar imagen:", vehicleToDelete.imagenes);
+            }
+          }
+        } catch (storageError: unknown) {
+          console.warn("Advertencia: No se pudo eliminar la imagen de Storage:", getErrorMessage(storageError));
+        }
+      }
+      toast.success('Vehículo eliminado.', { id: toastId });
+      console.log("[useVehicles] Recargando listas después de eliminar...");
+      await loadVehiculos();
+      await loadVehiculosVendidos();
+    } catch (err: unknown) {
+      console.error("Error al eliminar vehículo:", err);
+      const errorMsg = getErrorMessage(err);
+      setGeneralError(errorMsg);
+      toast.error(errorMsg, { id: toastId });
+      throw err;
+    }
+  };
+
+  const handleMarkAsSold = async (id: number): Promise<void> => {
+    console.log("[useVehicles] Iniciando handleMarkAsSold para ID:", id);
+    const vehicleToSell = vehiculos.find(v => v.id === id);
+    if (!vehicleToSell) {
+      toast.error("Vehículo no encontrado en inventario.");
+      console.warn("[useVehicles] Vehículo no encontrado en inventario local, ID:", id);
+      return;
+    }
+    const toastId = toast.loading(`Marcando ${vehicleToSell.marca} ${vehicleToSell.linea} como vendido...`);
+    setGeneralError(null);
+    try {
+      console.log("[useVehicles] Llamando a apiMarcarComoVendido para ID:", id);
+      await apiMarcarComoVendido(id);
+      toast.success('Vehículo marcado como vendido.', { id: toastId });
+      console.log("[useVehicles] Recargando listas después de marcar como vendido...");
+      await loadVehiculos();
+      await loadVehiculosVendidos();
+    } catch (err: unknown) {
+      console.error("Error al marcar como vendido:", err);
+      const errorMsg = getErrorMessage(err);
+      setGeneralError(errorMsg);
+      toast.error(errorMsg, { id: toastId });
+      throw err;
+    }
   };
 
   return {
-    // Estados
-    vehiculos,
-    isLoadingList,
-    generalError,
-    formData,
-    imageFile,
-    editId,
-    isSubmitting, // Estado de carga del formulario
-    vehiculosVendidos, // <-- AÑADIDO
-    isLoadingVendidos, // <-- AÑADIDO
-    activeTab,         // <-- AÑADIDO
-    setActiveTab,      // <-- AÑADIDO
-    filtroMes,         // <-- AÑADIDO
-    setFiltroMes,      // <-- AÑADIDO
-    filtroAnio,        // <-- AÑADIDO
-    setFiltroAnio,     // <-- AÑADIDO
-    loadVehiculosVendidos, // <-- AÑADIDO (para llamar desde la UI al cambiar filtros)
-
-    // Setters y Handlers
-    handleImageChange, // Cambiado de setImagenFile
-    updateFormField,
-    handleSubmit, // Renombrado de handleCreate/handleUpdate
-    handleDelete,
-    handleMarkAsSold,
-    startEdit,
-    clearForm, // Exportar para el botón cancelar
+    vehiculos, isLoadingList, generalError, formData, imageFile, editId,
+    isSubmitting, vehiculosVendidos, isLoadingVendidos, activeTab, setActiveTab,
+    filtroMes, setFiltroMes, filtroAnio, setFiltroAnio, loadVehiculosVendidos,
+    handleImageChange, updateFormField, handleSubmit, handleDelete,
+    handleMarkAsSold, startEdit, clearForm,
   };
 }

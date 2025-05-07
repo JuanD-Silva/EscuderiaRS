@@ -1,11 +1,51 @@
 // src/app/admin/services/vehicleService.ts
 import { supabase, VehiculoFormData, Vehiculo } from "../lib/supabase";
 
-// Función de parseo mejorada y separada
+// --- Tipo de Payload para Supabase ---
+// Este tipo representa la estructura de datos que realmente enviaremos a Supabase.
+// Es esencialmente `Partial<Vehiculo>`, pero omitiendo los campos que nunca se envían
+// y asegurando que los tipos coincidan con lo que Supabase espera (ej. números son números, no strings).
+// Usamos Omit para quitar los campos autogenerados o que no manejamos en el insert/update directo.
+type VehiculoPayload = Partial<Omit<Vehiculo, 'id' | 'created_at'>>;
+// Si necesitas ser aún más específico, podrías listar explícitamente las propiedades y sus tipos:
+// type VehiculoPayload = {
+//   linea?: string | null;
+//   marca?: string | null;
+//   modelo?: number | null;
+//   km?: number | null;
+//   // ... y así sucesivamente para todos los campos que puedes insertar/actualizar
+//   imagenes?: string | null;
+//   vendido?: boolean;
+//   estado?: string | null; // O tu tipo Enum específico si lo defines
+//   // etc.
+// }
+
+// --- Función Auxiliar getErrorMessage ---
+// (Importante para manejar errores consistentemente)
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+    return (error as { message: string }).message || "Error con mensaje vacío.";
+  }
+  try {
+      const errorString = String(error);
+      if (errorString !== '[object Object]') {
+          return errorString;
+      }
+  } catch (e) { /* Ignorar error de conversión */ }
+  return "Ocurrió un error desconocido.";
+}
+
+// --- Función de Parseo ---
+// Devuelve Partial<Vehiculo> como antes, esto es útil para la lógica de transformación.
 function parseAndValidateFormData(formData: VehiculoFormData, imageUrl?: string | null): Partial<Vehiculo> {
   const parsed: Partial<Vehiculo> = {};
 
-  // Campos de texto (mantener null si están vacíos)
   parsed.linea = formData.linea?.trim() || null;
   parsed.marca = formData.marca?.trim() || null;
   parsed.tipo_caja = formData.tipo_caja?.trim() || null;
@@ -14,170 +54,209 @@ function parseAndValidateFormData(formData: VehiculoFormData, imageUrl?: string 
   parsed.color = formData.color?.trim() || null;
   parsed.lugar_matricula = formData.lugar_matricula?.trim() || null;
   parsed.motor = formData.motor?.trim() || null;
-  parsed.estado = formData.estado?.trim() || 'disponible'; // Estado por defecto
+  parsed.estado = formData.estado?.trim() || 'disponible';
   parsed.placa = formData.placa?.trim().toUpperCase() || null;
-
-  // Fechas (mantener null si están vacías)
   parsed.soat = formData.soat || null;
   parsed.tecno = formData.tecno || null;
 
-  // Números (parsear y validar, devolver null si no es válido)
   const modeloNum = parseInt(formData.modelo, 10);
   parsed.modelo = !isNaN(modeloNum) ? modeloNum : null;
 
   const kmNum = parseInt(formData.km, 10);
   parsed.km = !isNaN(kmNum) ? kmNum : null;
 
-  const valorNum = parseFloat(formData.valor_venta); // Usar parseFloat para permitir decimales si aplica
+  const valorNum = parseFloat(formData.valor_venta);
   parsed.valor_venta = !isNaN(valorNum) ? valorNum : null;
 
-  // Booleanos (ya vienen como boolean del FormField)
   parsed.reporte = formData.reporte ?? false;
   parsed.prenda = formData.prenda ?? false;
-
-  // Imagen (usar la URL pasada o la del formData si existe)
   parsed.imagenes = imageUrl ?? (formData.imagenes || null);
 
-  // Vendido (generalmente se maneja aparte, no desde el form principal)
-  // parsed.vendido = false; // Se establece en false al crear
+  // Opcional: Filtrar claves undefined si es necesario, aunque Supabase suele ignorarlas.
+  // Object.keys(parsed).forEach(key => {
+  //    if (parsed[key as keyof typeof parsed] === undefined) {
+  //       delete parsed[key as keyof typeof parsed];
+  //     }
+  // });
 
-  // Filtrar propiedades con valor undefined antes de devolver
-  Object.keys(parsed).forEach(key => {
-     if (parsed[key as keyof typeof parsed] === undefined) {
-        delete parsed[key as keyof typeof parsed];
-      }
-  });
-
-
-  // Validaciones adicionales (opcional, lanzar error si algo es inválido)
+  // Considera validaciones más robustas aquí si es necesario
   if (!parsed.marca || !parsed.linea || !parsed.modelo || !parsed.placa || !parsed.valor_venta) {
-      console.error("Datos inválidos detectados:", parsed);
-      // Podrías lanzar un error aquí para detener el proceso
-      // throw new Error("Faltan campos obligatorios o tienen formato incorrecto.");
+      console.warn("Advertencia: Campos obligatorios faltantes o inválidos en parseAndValidateFormData:", parsed);
+      // Dependiendo de tu lógica, podrías lanzar un error aquí
+      // throw new Error("Faltan campos obligatorios.");
   }
-
 
   return parsed;
 }
 
+// --- Funciones de Servicio CRUD ---
 
-export async function createVehiculo(formData: VehiculoFormData, imageUrl: string | null) {
-  const parsedData = parseAndValidateFormData(formData, imageUrl);
-  // Asegurar que 'vendido' sea false al crear
-  parsedData.vendido = false;
-  // Asegurarse que no se envie ID al crear
-  delete parsedData.id;
-  delete parsedData.created_at;
+export async function createVehiculo(formData: VehiculoFormData, imageUrl: string | null): Promise<Vehiculo> {
+  // 1. Parsear: Convierte los strings del formulario a los tipos correctos (number, null, etc.)
+  const parsedData: Partial<Vehiculo> = parseAndValidateFormData(formData, imageUrl);
 
-  console.log("Insertando:", parsedData);
-  return await supabase.from("Autos").insert(parsedData as any).select().single(); // `as any` puede ser necesario si el tipo Partial<Vehiculo> no coincide 100% con lo esperado por insert
+  // 2. Ajustar datos específicos para la creación
+  parsedData.vendido = false; // Asegura que 'vendido' sea false
+  delete parsedData.id;        // No enviar ID
+  delete parsedData.created_at;// No enviar created_at
+
+  // 3. Preparar el payload final para Supabase (usando el tipo VehiculoPayload)
+  //    Esto asegura que estamos pasando un objeto con la estructura esperada por .insert()
+  const payload: VehiculoPayload = parsedData;
+  console.log("Insertando payload:", payload);
+
+  // 4. Ejecutar la inserción (sin 'as any')
+  const { data, error } = await supabase
+    .from("Autos")
+    .insert(payload) // Pasar el payload tipado
+    .select()
+    .single();
+
+  // 5. Manejo de errores
+  if (error) {
+    console.error("[createVehiculo] Error de Supabase:", error);
+    throw new Error(getErrorMessage(error));
+  }
+  if (!data) {
+    // Esto puede ocurrir si las políticas RLS impiden la inserción pero no devuelven un error explícito,
+    // o si .single() falla por alguna razón inesperada después de un insert exitoso (menos común).
+    console.error("[createVehiculo] No se recibieron datos después de la inserción.");
+    throw new Error("No se pudo crear el vehículo, no se devolvieron datos.");
+  }
+
+  console.log("[createVehiculo] Vehículo creado exitosamente:", data);
+  // Asegurar que los datos devueltos coincidan con el tipo Vehiculo
+  return data as Vehiculo;
 }
 
-export async function fetchVehiculos() {
-    // Seleccionar solo las columnas necesarias
-    return await supabase
+export async function fetchVehiculos() { // Devuelve { data, error } directamente
+    console.log("[fetchVehiculos] Obteniendo todos los vehículos...");
+    const result = await supabase
         .from("Autos")
-        .select(`
-            *
-        `) // Ajusta las columnas según necesites en la lista
+        .select(`*`) // Considera seleccionar solo las columnas necesarias para la lista
         .order("created_at", { ascending: false });
+    console.log(`[fetchVehiculos] Se encontraron ${result.data?.length ?? 0} vehículos.`);
+    if(result.error) {
+        console.error("[fetchVehiculos] Error de Supabase:", result.error);
+        // Podrías lanzar un error aquí también si prefieres manejarlo en el hook
+        // throw new Error(getErrorMessage(result.error));
+    }
+    return result; // Devuelve el objeto { data, error } completo
 }
 
-export async function updateVehiculo(id: number, formData: VehiculoFormData) { // Recibe FormData completo
-    const parsedData = parseAndValidateFormData(formData, formData.imagenes); // Usar URL del formData si no se subió nueva
-    // Eliminar campos que no deben actualizarse directamente (ej: created_at, vendido se maneja aparte)
+export async function updateVehiculo(id: number, formData: VehiculoFormData): Promise<Vehiculo> {
+    // 1. Parsear datos del formulario (incluyendo la URL de imagen existente si no hay una nueva implícita)
+    const parsedData: Partial<Vehiculo> = parseAndValidateFormData(formData, formData.imagenes);
+
+    // 2. Eliminar campos que no deben actualizarse directamente
     delete parsedData.id;
     delete parsedData.created_at;
-    delete parsedData.vendido; // El estado 'vendido' se actualiza por separado
+    delete parsedData.vendido; // Se maneja por marcarComoVendido
 
-    console.log("Actualizando ID", id, "con:", parsedData);
-    return await supabase
+    // 3. Preparar el payload final para Supabase update
+    const payload: VehiculoPayload = parsedData;
+    console.log("Actualizando ID", id, "con payload:", payload);
+
+    // 4. Ejecutar la actualización (sin 'as any')
+    const { data, error } = await supabase
         .from("Autos")
-        .update(parsedData as any) // `as any` puede ser necesario
+        .update(payload) // Pasar el payload tipado
         .eq("id", id)
         .select()
-        .single();
+        .single(); // Para obtener el registro actualizado
+
+    // 5. Manejo de errores
+    if (error) {
+      console.error("[updateVehiculo] Error de Supabase:", error);
+      throw new Error(getErrorMessage(error));
+    }
+    if (!data) {
+      // Puede ocurrir si el ID no existe o RLS impiden la actualización/selección
+      console.error(`[updateVehiculo] No se recibieron datos después de actualizar ID ${id}.`);
+      throw new Error(`No se pudo actualizar el vehículo con ID ${id}, no se devolvieron datos.`);
+    }
+
+    console.log(`[updateVehiculo] Vehículo ID ${id} actualizado exitosamente:`, data);
+    return data as Vehiculo;
 }
 
-
+// deleteVehiculo devuelve { data, error } para que el hook pueda manejarlo si es necesario
 export async function deleteVehiculo(id: number) {
-  console.log("Eliminando ID", id);
-  return await supabase.from("Autos").delete().eq("id", id);
+  console.log("[deleteVehiculo] Eliminando ID:", id);
+  const result = await supabase.from("Autos").delete().eq("id", id);
+  if (result.error) {
+    console.error("[deleteVehiculo] Error de Supabase:", result.error);
+    // Es buena práctica lanzar el error para que el hook lo capture
+    throw new Error(getErrorMessage(result.error));
+  }
+  console.log(`[deleteVehiculo] Solicitud de eliminación para ID ${id} enviada.`);
+  return result; // Devuelve el resultado { data, error } (error será null si tuvo éxito)
 }
 
+export async function marcarComoVendido(id: number): Promise<Vehiculo> {
+  console.log("[marcarComoVendido] Marcando como vendido ID:", id);
 
-
-export async function marcarComoVendido(id: number): Promise<Vehiculo> { // Puedes seguir devolviendo el vehículo actualizado
-  console.log("[vehicleService] Marcando como vendido (solo columna 'vendido') ID:", id);
+  const updatePayload = {
+    vendido: true,
+    fecha_venta: new Date().toISOString(),
+    // Si necesitas actualizar el ENUM 'estado', añádelo aquí:
+    // estado: 'vendido' // Solo si 'vendido' es parte válida del ENUM 'Estado'
+  };
+  console.log("[marcarComoVendido] Payload de actualización:", updatePayload);
 
   const { data, error } = await supabase
     .from("Autos")
-    .update({
-      vendido: true,
-      fecha_venta: new Date().toISOString(),
-       // ÚNICAMENTE actualizamos la columna 'vendido'
-      // NO incluimos la columna 'estado' aquí
-    })
+    .update(updatePayload)
     .eq("id", id)
-    .select() // Buena práctica para obtener el registro actualizado
-    .single(); // Si esperas que solo se actualice un registro
+    .select()
+    .single();
 
   if (error) {
-    console.error("[vehicleService] Error de Supabase al marcar como vendido (solo columna 'vendido'):", error);
-    // Lanza un nuevo error con el mensaje del error de Supabase.
-    throw new Error(error.message || "Error desconocido en la base de datos al actualizar 'vendido'.");
+    console.error("[marcarComoVendido] Error de Supabase:", error);
+    throw new Error(getErrorMessage(error));
   }
-
   if (!data) {
-    // Esto ocurre si el ID no se encontró, pero no hubo error de BD.
-    console.warn(`[vehicleService] No se encontró el vehículo con ID ${id} para actualizar 'vendido'.`);
+    console.warn(`[marcarComoVendido] No se encontró el vehículo con ID ${id} para marcar como vendido.`);
     throw new Error(`Vehículo con ID ${id} no encontrado.`);
   }
 
-  console.log("[vehicleService] Columna 'vendido' actualizada a true exitosamente para:", data);
-  return data as Vehiculo; // Devuelve el vehículo actualizado
+  console.log("[marcarComoVendido] Vehículo marcado como vendido exitosamente:", data);
+  return data as Vehiculo;
 }
 
-// AÑADE ESTA NUEVA FUNCIÓN
-export async function fetchVehiculosVendidos(filters?: { month?: number, year?: number }) {
-  console.log("[vehicleService] Fetching vehículos vendidos con filtros:", filters);
-  let query = supabase
-      .from("Autos")
-      // Simplemente selecciona todas las columnas, o especifícalas si quieres ser selectivo.
-      // 'propietario_ubicacion' es solo una columna más de 'Autos'.
-      .select("*") // Esto ya incluye 'propietario_ubicacion' y todas las demás columnas de 'Autos'
-      // Si solo quisieras algunas columnas específicas, las listarías:
-      // .select("id, marca, linea, modelo, placa, fecha_venta, propietario_ubicacion, valor_venta, vendido")
-      .eq("vendido", true);
+export async function fetchVehiculosVendidos(filters?: { month?: number, year?: number }): Promise<Vehiculo[]> {
+    console.log("[fetchVehiculosVendidos] Obteniendo vehículos vendidos con filtros:", filters);
+    let query = supabase
+        .from("Autos")
+        .select("*")
+        .eq("vendido", true);
 
-  if (filters?.year && filters?.month) {
-      const startDate = new Date(filters.year, filters.month - 1, 1);
-      const endDate = new Date(filters.year, filters.month, 0, 23, 59, 59, 999);
-      console.log(`Filtrando por fecha_venta entre ${startDate.toISOString()} y ${endDate.toISOString()}`);
-      query = query.gte("fecha_venta", startDate.toISOString())
-                   .lte("fecha_venta", endDate.toISOString());
-  } else if (filters?.year) {
-      const startDate = new Date(filters.year, 0, 1);
-      const endDate = new Date(filters.year, 11, 31, 23, 59, 59, 999);
-      console.log(`Filtrando por fecha_venta para el año ${filters.year}`);
-      query = query.gte("fecha_venta", startDate.toISOString())
-                   .lte("fecha_venta", endDate.toISOString());
-  }
+    if (filters?.year && filters?.month) {
+        const startDate = new Date(filters.year, filters.month - 1, 1);
+        const endDate = new Date(filters.year, filters.month, 0, 23, 59, 59, 999);
+        console.log(`Filtrando por fecha_venta entre ${startDate.toISOString()} y ${endDate.toISOString()}`);
+        query = query.gte("fecha_venta", startDate.toISOString())
+                     .lte("fecha_venta", endDate.toISOString());
+    } else if (filters?.year) {
+        const startDate = new Date(filters.year, 0, 1);
+        const endDate = new Date(filters.year, 11, 31, 23, 59, 59, 999);
+        console.log(`Filtrando por fecha_venta para el año ${filters.year}`);
+        query = query.gte("fecha_venta", startDate.toISOString())
+                     .lte("fecha_venta", endDate.toISOString());
+    }
 
-  query = query.order("fecha_venta", { ascending: false });
-  const { data, error } = await query;
+    query = query.order("fecha_venta", { ascending: false });
+    const { data, error } = await query;
 
-  if (error) {
-      console.error("[vehicleService] Error fetching vehículos vendidos:", error);
-      throw new Error(error.message || "Error al obtener vehículos vendidos.");
-  }
+    if (error) {
+        console.error("[fetchVehiculosVendidos] Error fetching vehículos vendidos:", error);
+        throw new Error(getErrorMessage(error));
+    }
+    if (!data) {
+        console.log("[fetchVehiculosVendidos] No se encontraron vehículos vendidos para los filtros aplicados.");
+        return [];
+    }
 
-  if (!data) {
-      console.log("[vehicleService] No se encontraron vehículos vendidos para los filtros aplicados.");
-      return []; // Devuelve array vacío si no hay datos
-  }
-
-  console.log("[vehicleService] Vehículos vendidos encontrados:", data.length);
-  // Asegurarse de que el tipo devuelto coincida con lo que espera el resto de tu código
-  return data as Vehiculo[]; // O simplemente data si la inferencia es correcta
+    console.log("[fetchVehiculosVendidos] Vehículos vendidos encontrados:", data.length);
+    return data as Vehiculo[];
 }

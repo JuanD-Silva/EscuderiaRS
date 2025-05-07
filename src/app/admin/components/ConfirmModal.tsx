@@ -1,5 +1,4 @@
 // src/app/admin/components/ConfirmModal.tsx (o src/components/ui/ConfirmModal.tsx si es global)
-import React, { Fragment } from 'react'; // Fragment para modales sin div extra
 import { FiAlertTriangle, FiX } from 'react-icons/fi'; // Iconos
 
 interface ConfirmModalProps {

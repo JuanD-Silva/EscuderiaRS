@@ -13,6 +13,30 @@ interface FinanciacionModalProps {
   vehiculoInteres: Vehiculo;
 }
 
+// --- Función Auxiliar getErrorMessage ---
+// (Puedes moverla a un archivo de utilidades si la usas en varios sitios)
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  // Intenta manejar otros objetos con 'message'
+  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+    return (error as { message: string }).message || "Error con mensaje vacío.";
+  }
+  try {
+      const errorString = String(error);
+      if (errorString !== '[object Object]') {
+          return errorString;
+      }
+  } catch (e) { /* Ignorar */ }
+  return "Ocurrió un error desconocido.";
+}
+// --- FIN Función Auxiliar ---
+
+
 export const FinanciacionModal: React.FC<FinanciacionModalProps> = ({ isOpen, onClose, vehiculoInteres }) => {
   if (!isOpen) return null;
 
@@ -27,28 +51,28 @@ export const FinanciacionModal: React.FC<FinanciacionModalProps> = ({ isOpen, on
         body: JSON.stringify({ ...formData, vehiculoInteresNombre: vehiculoNombre }),
       });
 
-      const result = await response.json(); // Intenta parsear la respuesta siempre
+      const result = await response.json();
 
       if (!response.ok) {
-        // Usa el mensaje del backend si está disponible, o uno genérico
-        throw new Error(result.message || `Error del servidor: ${response.status}`);
+        // Intenta obtener un mensaje de error específico del backend del objeto 'result'
+        const backendErrorMessage = result?.message || result?.error || `Error del servidor: ${response.status} ${response.statusText}`;
+        // Lanza un error estándar para ser capturado por el catch
+        throw new Error(backendErrorMessage);
       }
 
       toast.success('¡Solicitud enviada con éxito! Nos pondremos en contacto pronto.', { id: toastId, duration: 5000 });
-      onClose(); // Cierra el modal si el envío fue exitoso
-    } catch (error: any) {
+      onClose();
+    } catch (error: unknown) { // <--- CAMBIO: tipado como unknown
       console.error("Error al enviar la solicitud de financiación:", error);
-      toast.error(error.message || 'No se pudo enviar la solicitud. Por favor, inténtalo de nuevo más tarde.', { id: toastId });
-      // No cerramos el modal en caso de error para que el usuario pueda reintentar o verificar los datos.
+      // Usa la función auxiliar para obtener un mensaje seguro del error capturado
+      const errorMessage = getErrorMessage(error);
+      toast.error(errorMessage || 'No se pudo enviar la solicitud. Por favor, inténtalo de nuevo más tarde.', { id: toastId });
     }
   };
 
   return (
-    // Overlay
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 transition-opacity duration-300 ease-in-out animate-fadeIn">
-      {/* Contenedor del Modal */}
       <div className="bg-gray-800 rounded-lg shadow-xl border border-gray-700 w-full max-w-lg max-h-[90vh] flex flex-col animate-slideUp">
-        {/* Encabezado del Modal */}
         <div className="flex items-center justify-between p-4 border-b border-gray-600 sticky top-0 bg-gray-800 z-10">
           <h2 className="text-xl font-semibold text-white">Solicitar Financiación</h2>
           <button
@@ -59,35 +83,14 @@ export const FinanciacionModal: React.FC<FinanciacionModalProps> = ({ isOpen, on
             <FiX size={22} />
           </button>
         </div>
-
-        {/* Cuerpo del Modal (con scroll) */}
         <div className="p-5 sm:p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
           <FinanciacionForm
             vehiculoInteres={vehiculoInteres}
-            onFormSubmit={handleFormSubmit} // Pasa la función que llama a la API
-            onCancel={onClose} // Pasa la función para cerrar el modal desde el botón "Cancelar" del form
+            onFormSubmit={handleFormSubmit}
+            onCancel={onClose}
           />
         </div>
       </div>
     </div>
   );
 };
-
-// Opcional: Pequeñas animaciones con Tailwind (añadir a tu tailwind.config.js si quieres)
-/*
-En tailwind.config.js, dentro de theme.extend:
-keyframes: {
-  fadeIn: {
-    '0%': { opacity: '0' },
-    '100%': { opacity: '1' },
-  },
-  slideUp: {
-    '0%': { opacity: '0', transform: 'translateY(20px)' },
-    '100%': { opacity: '1', transform: 'translateY(0)' },
-  }
-},
-animation: {
-  fadeIn: 'fadeIn 0.3s ease-out',
-  slideUp: 'slideUp 0.3s ease-out',
-}
-*/

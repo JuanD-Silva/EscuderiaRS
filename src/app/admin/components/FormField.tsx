@@ -2,12 +2,15 @@
 import React, { ChangeEvent } from 'react';
 import Image from 'next/image'; // Para preview de imagen
 
+// 1. Definir un tipo más específico para el valor de onChange
+type FormFieldValue = string | number | boolean | File | null;
+
 interface FormFieldProps {
   id: string;
   label: string;
   type: 'text' | 'number' | 'date' | 'textarea' | 'checkbox' | 'file' | 'select' | 'currency';
   value: string | number | boolean | File | null | undefined;
-  onChange: (value: any) => void;
+  onChange: (value: FormFieldValue) => void; // <--- CAMBIO: Usar FormFieldValue en lugar de any
   options?: readonly Readonly<{ value: string; label: string }>[];
   rows?: number;
   placeholder?: string;
@@ -22,7 +25,8 @@ interface FormFieldProps {
 export const FormField: React.FC<FormFieldProps> = ({
   id, label, type, value, onChange, options = [], rows = 3,
   placeholder, required = false, disabled = false, error = null, accept = "image/*",
-  imagePreviewUrl = null, currencySymbol = 'COP',
+  imagePreviewUrl = null,
+  currencySymbol = '$', // <--- CAMBIO: Puedes ajustar el default, pero ahora se usará
 }) => {
 
   const baseInputClasses = `
@@ -101,21 +105,13 @@ export const FormField: React.FC<FormFieldProps> = ({
     );
   }
 
-  // --- File Input (con Preview) ---
   if (type === 'file') {
-    // Determinar la URL de origen para la imagen de previsualización
     let previewSrc: string | null = null;
     if (value instanceof File) {
-        // Si 'value' es un archivo, crear una URL de objeto para él.
-        // Esta URL es temporal y debe ser revocada cuando ya no se necesite.
-        // La revocación se maneja en el componente padre (VehicleForm)
-        // que es quien crea y gestiona el ciclo de vida de esta URL de objeto.
         previewSrc = URL.createObjectURL(value);
     } else if (imagePreviewUrl && (imagePreviewUrl.startsWith('http') || imagePreviewUrl.startsWith('blob:'))) {
-        // Si no hay archivo en 'value', pero hay una imagePreviewUrl válida (externa o blob existente), usarla.
         previewSrc = imagePreviewUrl;
     }
-
 
     return (
         <div className="w-full">
@@ -133,7 +129,7 @@ export const FormField: React.FC<FormFieldProps> = ({
                         onChange(file || null);
                     }}
                     disabled={disabled}
-                    required={required} // `required` en input file tiene un comportamiento peculiar, considerar validación en JS
+                    required={required}
                     className={`
                         block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4
                         file:rounded-md file:border-0 file:text-sm file:font-semibold
@@ -142,21 +138,15 @@ export const FormField: React.FC<FormFieldProps> = ({
                         ${baseInputClasses} p-0 ${errorClasses} overflow-hidden
                     `}
                 />
-                {/* Preview de Imagen: Solo se muestra si tenemos una previewSrc válida */}
                  {previewSrc && (
                      <div className="flex-shrink-0">
                         <Image
-                           src={previewSrc} // Usar la variable previewSrc determinada arriba
+                           src={previewSrc}
                            alt="Preview"
                            width={48}
                            height={48}
                            className="object-cover rounded"
-                           // El onLoad para revocar URLs de blob se maneja de forma más segura
-                           // en el componente que creó la URL de blob (VehicleForm).
-                           // onError puede ser útil aquí para mostrar un placeholder si la URL externa falla.
-                           onError={(e) => {
-                            // Podrías tener una lógica para reemplazar con un placeholder si la carga de `previewSrc` falla.
-                            // e.currentTarget.src = '/path/to/placeholder-image.png';
+                           onError={(_e) => { // <--- CAMBIO: _e en lugar de e
                             console.warn(`Error cargando imagen preview: ${previewSrc}`);
                            }}
                          />
@@ -168,7 +158,6 @@ export const FormField: React.FC<FormFieldProps> = ({
     );
 }
 
-  // --- Inputs Normales (text, number, date, currency) ---
   return (
     <div className="w-full">
       <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">
@@ -177,7 +166,8 @@ export const FormField: React.FC<FormFieldProps> = ({
       <div className={type === 'currency' ? 'relative' : ''}>
         {type === 'currency' && (
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <span className="text-gray-400 sm:text-sm">$</span> {/* Considerar pasar currencySymbol si no siempre es $ */}
+                {/* 2. Usar la prop currencySymbol */}
+                <span className="text-gray-400 sm:text-sm">{currencySymbol}</span> {/* <--- CAMBIO: Usar currencySymbol */}
             </div>
         )}
         <input
@@ -193,7 +183,7 @@ export const FormField: React.FC<FormFieldProps> = ({
           disabled={disabled}
           className={`
             ${baseInputClasses} ${errorClasses}
-            ${type === 'currency' ? 'pl-7' : ''}
+            ${type === 'currency' ? 'pl-7' : ''} // Ajusta pl-7 si el símbolo es más ancho que '$'
             ${type === 'number' ? `
                 [&::-webkit-inner-spin-button]:appearance-none
                 [&::-webkit-outer-spin-button]:appearance-none

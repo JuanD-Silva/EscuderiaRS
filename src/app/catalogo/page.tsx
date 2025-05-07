@@ -4,16 +4,17 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import Head from "next/head";
 import Link from "next/link";
-import { supabase, Vehiculo } from "../admin/lib/supabase"; // Ajusta la ruta si es necesario
+// Asegúrate que la ruta sea correcta para tu estructura
+import { supabase, Vehiculo } from "@/app/admin/lib/supabase";
 
 // Importa los nuevos componentes
-import { FilterSidebar, Filters } from "../catalogo/components/FilterSidebar";
-import { VehicleCard } from "../catalogo/components/VehicleCard";
-import { SortDropdown, SortOption } from "../catalogo/components/SortDropdown";
+import { FilterSidebar, Filters } from "./components/FilterSidebar"; // Corregida ruta
+import { VehicleCard } from "./components/VehicleCard"; // Corregida ruta
+import { SortDropdown, SortOption } from "./components/SortDropdown"; // Corregida ruta
 
-// Importa iconos (asegúrate de tener react-icons instalado: npm install react-icons)
+// Importa iconos
 import { FiFilter } from "react-icons/fi";
-import { ClipLoader } from "react-spinners"; // O usa tu propio spinner
+import { ClipLoader } from "react-spinners";
 
 // --- Constantes y Tipos ---
 const initialFilters: Filters = {
@@ -30,61 +31,70 @@ const sortOptions: SortOption[] = [
   { value: "price_desc", label: "Precio (Mayor a Menor)" },
   { value: "year_desc", label: "Año (Más Nuevo)" },
   { value: "year_asc", label: "Año (Más Viejo)" },
-  { value: "km_asc", label: "Kilometraje (Menor)" }, // Texto más corto
-  { value: "km_desc", label: "Kilometraje (Mayor)" }, // Texto más corto
+  { value: "km_asc", label: "Kilometraje (Menor)" },
+  { value: "km_desc", label: "Kilometraje (Mayor)" },
 ];
+
+// --- Función Auxiliar getErrorMessage ---
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  // Intenta manejar errores de Supabase u otros objetos con 'message'
+  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+    return (error as { message: string }).message || "Error con mensaje vacío.";
+  }
+  try {
+      const errorString = String(error);
+      if (errorString !== '[object Object]') return errorString;
+  } catch (e) { /* Ignorar */ }
+  return "Ocurrió un error desconocido.";
+}
+// --- FIN Función Auxiliar ---
 
 // --- Componente Principal del Catálogo ---
 export default function CatalogoPage() {
-  const [allVehicles, setAllVehicles] = useState<Vehiculo[]>([]); // Todos los vehículos cargados
-  const [filteredVehicles, setFilteredVehicles] = useState<Vehiculo[]>([]); // Vehículos después de filtrar/ordenar
+  const [allVehicles, setAllVehicles] = useState<Vehiculo[]>([]);
+  const [filteredVehicles, setFilteredVehicles] = useState<Vehiculo[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(initialFilters);
-  const [sortBy, setSortBy] = useState<string>(sortOptions[0].value); // Orden por defecto
-  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false); // Estado para el modal de filtros
+  const [sortBy, setSortBy] = useState<string>(sortOptions[0].value);
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
 
-  // --- Efecto para Cargar Datos Iniciales ---
   useEffect(() => {
     async function loadVehiculos() {
       setLoading(true);
       setErrorMsg(null);
-      setAllVehicles([]); // Limpia antes de cargar
+      setAllVehicles([]);
       setFilteredVehicles([]);
       try {
-        // Seleccionar explícitamente solo las columnas necesarias
         const { data, error } = await supabase
           .from("Autos")
-          .select(
-            "id, created_at, marca, linea, modelo, km, imagenes, valor_venta, tipo_caja, motor, color, placa" // Añade más si las usas en la tarjeta o filtros
-            // Quita columnas que no uses para optimizar
-          )
-          .eq("vendido", false) // Solo los que no están marcados como vendidos
-          .order("created_at", { ascending: false }); // Orden inicial por defecto
+          // --- CAMBIO: Usar select('*') para obtener todas las columnas definidas en Vehiculo ---
+          .select("*")
+          .eq("vendido", false)
+          .order("created_at", { ascending: false });
 
         if (error) {
           console.error("Error Supabase al obtener vehículos:", error);
-          throw new Error("No se pudieron cargar los vehículos desde la base de datos.");
+          throw new Error(getErrorMessage(error));
         }
 
-        if (data) {
-          const vehiclesData = data as Vehiculo[];
-          setAllVehicles(vehiclesData);
-          // setFilteredVehicles(vehiclesData); // Se actualizará en el effect de applyFiltersAndSort
-        }
+        // Ahora 'data' debería ser compatible con Vehiculo[] si select('*') trae todas las columnas necesarias
+        setAllVehicles((data as Vehiculo[]) || []); // Casteo a Vehiculo[] y fallback a array vacío
 
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error cargando vehículos:", err);
-        setErrorMsg(err.message || "Ocurrió un error inesperado al cargar los vehículos.");
+        setErrorMsg(getErrorMessage(err));
       } finally {
         setLoading(false);
       }
     }
     loadVehiculos();
-  }, []); // Se ejecuta solo una vez al montar el componente
+  }, []); // Carga inicial
 
-  // --- Calcular Opciones Disponibles para los Filtros ---
   const filterOptions = useMemo(() => {
+    // Esta lógica debería funcionar bien si allVehicles ahora tiene todas las propiedades
     const makes = new Set<string>();
     const modelsByMake: { [key: string]: Set<string> } = {};
     let minPrice = Infinity, maxPrice = 0;
@@ -111,7 +121,6 @@ export default function CatalogoPage() {
       }
     });
 
-    // Si no hay vehículos, usar rangos por defecto o vacíos
     const defaultMinYear = new Date().getFullYear() - 20;
     const defaultMaxYear = new Date().getFullYear();
 
@@ -121,46 +130,36 @@ export default function CatalogoPage() {
         acc[make] = Array.from(modelSet).sort();
         return acc;
       }, {} as { [key: string]: string[] }),
-      priceRange: { min: minPrice === Infinity ? 0 : minPrice, max: maxPrice || 100000000 }, // Poner un max por defecto si es 0
+      priceRange: { min: minPrice === Infinity ? 0 : minPrice, max: maxPrice === 0 ? 100000000 : maxPrice },
       yearRange: { min: minYear === Infinity ? defaultMinYear : minYear, max: maxYear === 0 ? defaultMaxYear : maxYear },
-      kmRange: { min: minKm === Infinity ? 0 : minKm, max: maxKm || 500000 }, // Poner un max por defecto si es 0
+      kmRange: { min: minKm === Infinity ? 0 : minKm, max: maxKm === 0 ? 500000 : maxKm },
     };
   }, [allVehicles]);
 
-  // --- Función Memoizada para Aplicar Filtros y Ordenación ---
   const applyFiltersAndSort = useCallback(() => {
+    // Esta lógica debería funcionar ahora que allVehicles son Vehiculo[] completos
     let tempVehicles = [...allVehicles];
 
-    // 1. Aplicar Filtros
     tempVehicles = tempVehicles.filter((v) => {
-      // Marca
       if (filters.make !== "all" && v.marca !== filters.make) return false;
-      // Modelo (solo si hay marca seleccionada Y modelo seleccionado)
       if (filters.make !== "all" && filters.model !== "all" && v.linea !== filters.model) return false;
-      // Rango de Precio (usar ?? para manejar null/undefined)
       const price = v.valor_venta ?? null;
-      if (price === null && (filters.priceRange.min || filters.priceRange.max)) return false; // Excluir si no tiene precio y se filtra por precio
+      if (price === null && (filters.priceRange.min || filters.priceRange.max)) return false;
       if (filters.priceRange.min != null && price != null && price < filters.priceRange.min) return false;
       if (filters.priceRange.max != null && price != null && price > filters.priceRange.max) return false;
-      // Rango de Año (modelo)
       const year = v.modelo ?? null;
       if (year === null && (filters.yearRange.min || filters.yearRange.max)) return false;
       if (filters.yearRange.min != null && year != null && year < filters.yearRange.min) return false;
       if (filters.yearRange.max != null && year != null && year > filters.yearRange.max) return false;
-      // Rango de Kilometraje
       const km = v.km ?? null;
       if (km === null && (filters.kmRange.min || filters.kmRange.max)) return false;
       if (filters.kmRange.min != null && km != null && km < filters.kmRange.min) return false;
       if (filters.kmRange.max != null && km != null && km > filters.kmRange.max) return false;
-
-      // Añadir más condiciones de filtro aquí si es necesario
-
-      return true; // Pasa todos los filtros
+      return true;
     });
 
-    // 2. Aplicar Ordenación
     tempVehicles.sort((a, b) => {
-      const valA_price = a.valor_venta ?? (sortBy === 'price_asc' ? Infinity : -Infinity); // Nulos al final/principio según orden
+      const valA_price = a.valor_venta ?? (sortBy === 'price_asc' ? Infinity : -Infinity);
       const valB_price = b.valor_venta ?? (sortBy === 'price_asc' ? Infinity : -Infinity);
       const valA_year = a.modelo ?? 0;
       const valB_year = b.modelo ?? 0;
@@ -177,46 +176,35 @@ export default function CatalogoPage() {
         case "km_asc": return valA_km - valB_km;
         case "km_desc": return valB_km - valA_km;
         case "newest":
-        default: return dateB - dateA; // Más reciente primero
+        default: return dateB - dateA;
       }
     });
-
-    setFilteredVehicles(tempVehicles); // Actualiza el estado con los vehículos filtrados/ordenados
-
+    setFilteredVehicles(tempVehicles);
   }, [allVehicles, filters, sortBy]);
 
-  // --- Efecto para Re-aplicar Filtros/Orden cuando cambian ---
   useEffect(() => {
-    // Aplicar filtros/ordenación cada vez que cambien los datos originales,
-    // los filtros seleccionados o el criterio de ordenación.
     applyFiltersAndSort();
-  }, [applyFiltersAndSort]); // La dependencia es la función memoizada
+  }, [applyFiltersAndSort]);
 
-  // --- Manejadores de Eventos ---
   const handleFilterChange = useCallback((newFilters: Partial<Filters>) => {
     setFilters(prevFilters => {
         const updatedFilters = { ...prevFilters, ...newFilters };
-        // Si la marca cambió, resetear el modelo a 'all'
         if (newFilters.make && newFilters.make !== prevFilters.make) {
             updatedFilters.model = "all";
         }
         return updatedFilters;
     });
-    // Podrías cerrar el modal móvil aquí si lo deseas:
-    // if (isMobileFilterOpen) setIsMobileFilterOpen(false);
-  }, []); // Sin dependencias, ya que solo usa setFilters
+  }, []);
 
   const handleResetFilters = useCallback(() => {
     setFilters(initialFilters);
-    // Podrías cerrar el modal móvil aquí:
      if (isMobileFilterOpen) setIsMobileFilterOpen(false);
-  }, [isMobileFilterOpen]); // Depende de isMobileFilterOpen si lo usas dentro
+  }, [isMobileFilterOpen]);
 
   const handleSortChange = useCallback((newSortBy: string) => {
     setSortBy(newSortBy);
   }, []);
 
-  // --- Renderizado ---
   return (
     <>
       <Head>
@@ -225,18 +213,15 @@ export default function CatalogoPage() {
           name="description"
           content="Explora y filtra nuestro catálogo completo de autos usados disponibles en Escudería RS."
         />
-        {/* Considera añadir meta tags OpenGraph para compartir en redes sociales */}
       </Head>
 
       <div className="bg-black text-white min-h-screen flex flex-col">
-        {/* HEADER (Considera extraer a un componente Layout si es compartido) */}
         <header className="bg-gradient-to-r from-red-800 via-red-700 to-red-600 h-16 px-4 flex items-center justify-between shadow-lg shadow-black sticky top-0 z-30">
           <Link href="/" className="text-xl sm:text-2xl font-bold tracking-wider hover:text-gray-200 transition-colors">
             ESCUDERÍA R.S
           </Link>
-          {/* Botón para abrir filtros en móvil (visible solo en pantallas pequeñas) */}
           <button
-            className="lg:hidden text-white hover:text-gray-300 p-2 -mr-2" // Ajusta padding/margen si es necesario
+            className="lg:hidden text-white hover:text-gray-300 p-2 -mr-2"
             onClick={() => setIsMobileFilterOpen(true)}
             aria-label="Abrir filtros"
           >
@@ -244,39 +229,30 @@ export default function CatalogoPage() {
           </button>
         </header>
 
-        {/* --- Layout Principal (Sidebar + Contenido) --- */}
-        {/* flex-1 asegura que este div ocupe el espacio restante */}
-        <div className="flex flex-1 flex-col lg:flex-row"> {/* Cambia a row en pantallas grandes */}
-          {/* --- Sidebar de Filtros --- */}
-          {/* Se pasa el estado y los manejadores como props */}
+        <div className="flex flex-1 flex-col lg:flex-row">
           <FilterSidebar
             isOpen={isMobileFilterOpen}
             onClose={() => setIsMobileFilterOpen(false)}
             filters={filters}
-            options={filterOptions} // Pasa las opciones calculadas
+            options={filterOptions}
             onFilterChange={handleFilterChange}
             onReset={handleResetFilters}
-            vehicleCount={filteredVehicles.length} // Pasa el conteo de resultados
+            // --- CAMBIO: Pasar el valor correctamente ---
+            vehicleCount={filteredVehicles.length}
           />
 
-          {/* --- Contenido Principal --- */}
-          {/* flex-grow permite que ocupe el espacio restante al lado del sidebar */}
-          {/* overflow-y-auto permite scroll independiente del contenido si es largo */}
           <main className="flex-grow p-4 sm:p-6 lg:p-8 overflow-y-auto">
             <h1 className="text-3xl sm:text-4xl font-black text-center lg:text-left text-gray-100 mb-6 sm:mb-8">
               Vehículos Disponibles
             </h1>
 
-            {/* --- Controles Superiores (Resultados y Ordenación) --- */}
             <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-              {/* Conteo de resultados */}
               <p className="text-sm text-gray-400 order-2 sm:order-1">
                 {loading
                   ? 'Buscando vehículos...'
                   : `${filteredVehicles.length} vehículo(s) ${allVehicles.length > 0 && filteredVehicles.length !== allVehicles.length ? `de ${allVehicles.length}` : 'encontrado(s)'}`
                  }
               </p>
-              {/* Dropdown de Ordenación */}
               <div className="order-1 sm:order-2 w-full sm:w-auto">
                 <SortDropdown
                   options={sortOptions}
@@ -286,15 +262,13 @@ export default function CatalogoPage() {
               </div>
             </div>
 
-            {/* --- Feedback de Carga, Errores y Sin Resultados --- */}
             {loading && (
               <div className="flex justify-center items-center py-20 flex-col text-center">
-                 {/* Ejemplo con react-loader-spinner (npm install react-loader-spinner) */}
                  <ClipLoader
-                    color="#dc2626" // Tu color rojo de marca
-                    loading={loading} // Propiedad para controlar visibilidad (ya la tenemos)
-                    size={50} // Tamaño en píxeles (ajusta según prefieras)
-                    aria-label="Cargando vehículos..." // Para accesibilidad
+                    color="#dc2626"
+                    loading={loading}
+                    size={50}
+                    aria-label="Cargando vehículos..."
                  />
                  <p className="text-gray-400 text-lg mt-4">Cargando vehículos...</p>
               </div>
@@ -303,10 +277,8 @@ export default function CatalogoPage() {
               <div className="text-center text-red-400 bg-red-900/20 border border-red-700/50 p-6 rounded-lg max-w-lg mx-auto my-10 shadow-md">
                 <p className="font-semibold text-lg mb-2">¡Error!</p>
                 <p className="text-sm">{errorMsg}</p>
-                {/* Podrías añadir un botón para reintentar la carga */}
               </div>
             )}
-            {/* Mensaje cuando hay filtros aplicados pero no hay resultados */}
             {!loading && !errorMsg && filteredVehicles.length === 0 && allVehicles.length > 0 && (
               <div className="text-center text-gray-400 bg-gray-900/30 border border-gray-700/50 p-8 rounded-lg max-w-lg mx-auto my-10 shadow-md">
                   <p className="font-semibold text-lg mb-2">No se encontraron vehículos</p>
@@ -319,38 +291,32 @@ export default function CatalogoPage() {
                   </button>
               </div>
             )}
-             {/* Mensaje cuando la base de datos está vacía */}
             {!loading && !errorMsg && allVehicles.length === 0 && (
                  <p className="text-center text-gray-400 text-xl py-20">
                     Actualmente no hay vehículos disponibles en el catálogo.
                  </p>
             )}
 
-            {/* --- Cuadrícula de Vehículos --- */}
-            {/* Solo mostrar si no está cargando, no hay error y hay vehículos para mostrar */}
             {!loading && !errorMsg && filteredVehicles.length > 0 && (
-              // Ajusta las columnas según tus preferencias y el ancho del sidebar
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6 lg:gap-8">
                 {filteredVehicles.map((vehicle, index) => (
                   <VehicleCard
                     key={vehicle.id}
-                    vehicle={vehicle}
-                    // Prioriza la carga de las primeras ~6 imágenes (ajusta según el grid)
+                    vehicle={vehicle} // vehicle aquí ya es de tipo Vehiculo si allVehicles está bien tipado
                     priority={index < 6}
                    />
                 ))}
               </div>
             )}
           </main>
-        </div> {/* Fin de flex-1 */}
+        </div>
 
-        {/* FOOTER (Considera extraer a un componente Layout) */}
-        <footer className="bg-gray-950 text-center p-4 border-t border-gray-700/50 mt-auto"> {/* mt-auto si no usas flex-1 en el div padre */}
+        <footer className="bg-gray-950 text-center p-4 border-t border-gray-700/50 mt-auto">
           <p className="text-sm text-gray-500">
             © {new Date().getFullYear()} Escudería R.S. Todos los derechos reservados.
           </p>
         </footer>
-      </div> {/* Fin de flex flex-col min-h-screen */}
+      </div>
     </>
   );
 }

@@ -1,9 +1,10 @@
 // src/app/catalogo/components/FilterSidebar.tsx
 import React from 'react';
-import { FiX } from 'react-icons/fi';
-import { formatPrice } from '@/app/lib/utils'; // *** IMPORTAR formatPrice ***
+import { FiX, FiRefreshCw } from 'react-icons/fi'; // Importar FiRefreshCw para el botón reset
+import { formatPrice } from '@/app/lib/utils';
 
-// --- Tipos (sin cambios) ---
+// --- Tipos ---
+// (Asumiendo que estos tipos están correctos y definidos)
 export type Filters = {
   make: string;
   model: string;
@@ -20,6 +21,8 @@ type FilterOptions = {
   kmRange: { min: number; max: number };
 };
 
+// --- Interfaz de Props ---
+// Añadir vehicleCount a la interfaz
 interface FilterSidebarProps {
   isOpen: boolean;
   onClose: () => void;
@@ -27,7 +30,7 @@ interface FilterSidebarProps {
   options: FilterOptions;
   onFilterChange: (newFilters: Partial<Filters>) => void;
   onReset: () => void;
-  vehicleCount: number;
+  vehicleCount: number; // <-- AÑADIDA LA PROP REQUERIDA
 }
 
 // --- Componente ---
@@ -38,56 +41,42 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
   options,
   onFilterChange,
   onReset,
-  vehicleCount,
+  vehicleCount, // <-- DESESTRUCTURAR LA PROP
 }) => {
 
-    // --- Manejador de Cambios Corregido ---
+    // --- Manejador de Cambios ---
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target; // No necesitamos 'type' aquí
+        const { name, value } = e.target;
 
-        // Verificar si el nombre corresponde a un input de rango (contiene '.')
         if (name.includes('.') && name.split('.').length === 2) {
-            // --- Lógica para Inputs de Rango (min/max) ---
-            const [rangeKey, subKey] = name.split('.') as [keyof Filters, 'min' | 'max']; // Usar keyof Filters y 'min'|'max' para más seguridad
+            // Manejo de campos de rango (ej. "priceRange.min")
+            const [rangeKey, subKey] = name.split('.') as [keyof Filters, 'min' | 'max'];
 
-            // Validar que rangeKey sea una de las claves de rango esperadas
-            if ((rangeKey === 'priceRange' || rangeKey === 'yearRange' || rangeKey === 'kmRange') && (subKey === 'min' || subKey === 'max')) {
+            if (['priceRange', 'yearRange', 'kmRange'].includes(rangeKey) && (subKey === 'min' || subKey === 'max')) {
+                const parsedNum = parseInt(value, 10);
+                const finalValue = Number.isNaN(parsedNum) ? undefined : parsedNum; // Usar undefined si no es un número válido
 
-                // Convertir el valor a número o undefined si está vacío/inválido
-                const numericValue = value === '' ? undefined : parseInt(value, 10);
-                const finalValue = isNaN(numericValue as any) ? undefined : numericValue;
-
-                // *** CORRECCIÓN PRINCIPAL: Acceder al objeto de rango actual de forma segura ***
-                const currentRange = filters[rangeKey]; // TS ahora sabe que esto es { min?, max? }
-
-                // Actualizar el filtro específico (min o max) manteniendo el otro valor
+                const currentRange = filters[rangeKey as keyof Pick<Filters, 'priceRange' | 'yearRange' | 'kmRange'>]; // Ayuda a TS
                 onFilterChange({
-                    [rangeKey]: { // Usar la variable correcta 'rangeKey'
-                        ...currentRange, // *** Ahora sí, el spread es seguro ***
-                        [subKey]: finalValue, // Usar la variable correcta 'subKey'
+                    [rangeKey]: {
+                        ...currentRange,
+                        [subKey]: finalValue,
                     },
                 });
-
             } else {
                 console.warn("Nombre de input de rango inválido recibido:", name);
             }
-
-        } else if (name in filters) {
-            // --- Lógica para Inputs Directos (make, model, etc.) ---
-            // Asegurarse de que 'name' es una clave válida de 'Filters' antes de actualizar
+        } else if (name === 'make' || name === 'model') {
+             // Manejo de campos directos (make, model)
             onFilterChange({ [name]: value });
-
         } else {
              console.warn("Nombre de input desconocido recibido:", name);
         }
     };
-    // --- Fin del Manejador de Cambios Corregido ---
+    // --- Fin del Manejador de Cambios ---
 
-
-    // Obtener los modelos disponibles para la marca seleccionada (sin cambios)
     const availableModels = filters.make !== 'all' ? options.modelsByMake[filters.make] || [] : [];
 
-    // Clases CSS (sin cambios)
     const sidebarClasses = `
       fixed inset-y-0 left-0 z-40 bg-gray-950 border-r border-gray-700/50 shadow-xl
       transform ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
@@ -98,28 +87,29 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
       flex flex-col p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900
     `;
 
-    // Formateador (sin cambios)
+    // Función auxiliar para formatear placeholders de rangos (ej. 50k, 1.5M)
     const formatRangePlaceholder = (value: number) => {
-        if (value == null || isNaN(value)) return ''; // Manejar null/NaN
+        if (value == null || isNaN(value)) return '';
         if (value === 0) return '0';
-        if (value < 10000) return value.toString();
-        // Usar toLocaleString para miles si el número es grande
-        if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M'; // Millones
-        return (value / 1000).toFixed(0) + 'k'; // Miles
+        if (value < 1000) return value.toString(); // Muestra números menores a 1000 completos
+        if (value >= 1000000) return (value / 1000000).toFixed(value % 1000000 === 0 ? 0 : 1) + 'M'; // 1M, 1.5M
+        return (value / 1000).toFixed(0) + 'k'; // 50k, 120k
     }
 
-
-    // --- JSX (Renderizado) ---
     return (
       <>
-        {/* Overlay (sin cambios) */}
+        {/* Overlay para cerrar en móvil */}
         {isOpen && <div className="fixed inset-0 bg-black/60 z-30 lg:hidden" onClick={onClose} aria-hidden="true"></div>}
 
-        {/* Sidebar */}
         <aside className={sidebarClasses} aria-label="Filtros de Vehículos">
-          {/* Header del Sidebar (sin cambios) */}
+          {/* Encabezado del Sidebar */}
           <div className="flex justify-between items-center mb-5 border-b border-gray-700 pb-3">
             <h2 className="text-xl font-semibold text-white">Filtrar</h2>
+            {/* Mostrar conteo de resultados */}
+            <span className="text-sm text-gray-400 bg-gray-800 px-2 py-0.5 rounded-full">
+              {vehicleCount} {vehicleCount === 1 ? 'Resultado' : 'Resultados'}
+            </span>
+            {/* Botón cerrar en móvil */}
             <button
               onClick={onClose}
               className="lg:hidden text-gray-400 hover:text-white p-1 -mr-1"
@@ -131,7 +121,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
 
           {/* Formulario de Filtros */}
           <form className="space-y-6 flex-grow">
-            {/* Filtro por Marca (sin cambios) */}
+            {/* Filtro Marca */}
             <div>
               <label htmlFor="make" className="block text-sm font-medium text-gray-300 mb-1">Marca</label>
               <select
@@ -143,7 +133,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
               </select>
             </div>
 
-            {/* Filtro por Línea/Modelo (sin cambios) */}
+            {/* Filtro Modelo */}
             <div>
               <label htmlFor="model" className="block text-sm font-medium text-gray-300 mb-1">Línea / Modelo</label>
               <select
@@ -156,104 +146,90 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
               </select>
             </div>
 
-            {/* --- RANGOS CON HANDLER CORREGIDO --- */}
-
-            {/* Filtro por Rango de Precio */}
+            {/* Filtro Precio */}
             <fieldset>
                <legend className="block text-sm font-medium text-gray-300 mb-2">Precio (COP)</legend>
                <div className="flex space-x-2 items-center">
                   <input
-                      type="number"
-                      name="priceRange.min" // Correcto
-                      placeholder={`Min ${formatPrice(options.priceRange.min)}`} // Usar formatPrice importado
-                      value={filters.priceRange.min ?? ''}
-                      onChange={handleInputChange}
-                      min="0"
+                      type="number" name="priceRange.min"
+                      placeholder={`Min ${formatPrice(options.priceRange.min)}`} // Formato sin decimales
+                      value={filters.priceRange.min ?? ''} onChange={handleInputChange}
+                      min="0" step="100000" // Step opcional para facilitar
                       className="w-1/2 bg-gray-800 border border-gray-600 rounded-md p-2 text-white text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 placeholder-gray-500"
                       aria-label="Precio mínimo"
                    />
                    <span className="text-gray-500">-</span>
                   <input
-                      type="number"
-                      name="priceRange.max" // Correcto
-                      placeholder={`Max ${formatPrice(options.priceRange.max)}`} // Usar formatPrice importado
-                      value={filters.priceRange.max ?? ''}
-                      onChange={handleInputChange}
-                      min="0"
+                      type="number" name="priceRange.max"
+                      placeholder={`Max ${formatPrice(options.priceRange.max)}`} // Formato sin decimales
+                      value={filters.priceRange.max ?? ''} onChange={handleInputChange}
+                      min="0" step="100000"
                       className="w-1/2 bg-gray-800 border border-gray-600 rounded-md p-2 text-white text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 placeholder-gray-500"
                       aria-label="Precio máximo"
                   />
                </div>
             </fieldset>
 
-            {/* Filtro por Rango de Año */}
+            {/* Filtro Año */}
             <fieldset>
                <legend className="block text-sm font-medium text-gray-300 mb-2">Año</legend>
                <div className="flex space-x-2 items-center">
                    <input
-                      type="number"
-                      name="yearRange.min" // Correcto
+                      type="number" name="yearRange.min"
                       placeholder={`Min ${options.yearRange.min || ''}`}
-                      value={filters.yearRange.min ?? ''}
-                      onChange={handleInputChange}
-                      min={options.yearRange.min || 1980} // Añadir fallback por si min es 0 o Infinity
-                      max={options.yearRange.max || new Date().getFullYear()} // Añadir fallback
+                      value={filters.yearRange.min ?? ''} onChange={handleInputChange}
+                      min={options.yearRange.min && options.yearRange.min > 0 ? options.yearRange.min : 1980}
+                      max={options.yearRange.max || new Date().getFullYear() + 1}
+                      step="1"
                       className="w-1/2 bg-gray-800 border border-gray-600 rounded-md p-2 text-white text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 placeholder-gray-500"
                       aria-label="Año mínimo"
                    />
                     <span className="text-gray-500">-</span>
                    <input
-                      type="number"
-                      name="yearRange.max" // Correcto
+                      type="number" name="yearRange.max"
                       placeholder={`Max ${options.yearRange.max || ''}`}
-                      value={filters.yearRange.max ?? ''}
-                      onChange={handleInputChange}
-                      min={options.yearRange.min || 1980}
-                      max={options.yearRange.max || new Date().getFullYear()}
+                      value={filters.yearRange.max ?? ''} onChange={handleInputChange}
+                      min={options.yearRange.min && options.yearRange.min > 0 ? options.yearRange.min : 1980}
+                      max={options.yearRange.max || new Date().getFullYear() + 1}
+                      step="1"
                       className="w-1/2 bg-gray-800 border border-gray-600 rounded-md p-2 text-white text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 placeholder-gray-500"
                       aria-label="Año máximo"
                     />
                 </div>
             </fieldset>
 
-             {/* Filtro por Rango de Kilometraje */}
+            {/* Filtro Kilometraje */}
              <fieldset>
                <legend className="block text-sm font-medium text-gray-300 mb-2">Kilometraje (Km)</legend>
                <div className="flex space-x-2 items-center">
                   <input
-                      type="number"
-                      name="kmRange.min" // Correcto
+                      type="number" name="kmRange.min"
                       placeholder={`Min ${formatRangePlaceholder(options.kmRange.min)}`}
-                      value={filters.kmRange.min ?? ''}
-                      onChange={handleInputChange}
-                      min="0"
+                      value={filters.kmRange.min ?? ''} onChange={handleInputChange}
+                      min="0" step="1000"
                       className="w-1/2 bg-gray-800 border border-gray-600 rounded-md p-2 text-white text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 placeholder-gray-500"
                       aria-label="Kilometraje mínimo"
                   />
                    <span className="text-gray-500">-</span>
                   <input
-                      type="number"
-                      name="kmRange.max" // Correcto
+                      type="number" name="kmRange.max"
                       placeholder={`Max ${formatRangePlaceholder(options.kmRange.max)}`}
-                      value={filters.kmRange.max ?? ''}
-                      onChange={handleInputChange}
-                      min="0"
+                      value={filters.kmRange.max ?? ''} onChange={handleInputChange}
+                      min="0" step="1000"
                       className="w-1/2 bg-gray-800 border border-gray-600 rounded-md p-2 text-white text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 placeholder-gray-500"
                       aria-label="Kilometraje máximo"
                    />
                </div>
             </fieldset>
-
-            {/* ... (espacio para más filtros) */}
-
           </form>
 
-          {/* Botón Limpiar (sin cambios) */}
+          {/* Botón Limpiar Filtros */}
           <div className="mt-auto pt-4 border-t border-gray-700">
              <button
-                  onClick={() => { onReset(); }}
-                  className="w-full bg-gray-700 hover:bg-gray-600 text-white font-semibold p-2.5 rounded-md text-sm transition-colors duration-200"
+                  onClick={onReset}
+                  className="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium py-2.5 px-4 rounded-md transition-colors"
               >
+                  <FiRefreshCw size={16} />
                   Limpiar Filtros
               </button>
           </div>
