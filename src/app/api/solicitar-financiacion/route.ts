@@ -10,7 +10,6 @@ const backendFinanciacionSchema = z.object({
   email: z.string().email("Email inválido."),
   telefono: z.string().min(1, "Teléfono es requerido."),
   ciudad: z.string().optional(),
-  // Corregido typo en el mensaje de error
   montoFinanciar: z.number().positive("Monto a financiar debe ser positivo.").optional(),
   mensaje: z.string().optional(),
   aceptaVehiculoPartePago: z.boolean().optional(),
@@ -27,8 +26,7 @@ function formatCurrencyBackend(value: number | null | undefined): string {
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 }
 
-// --- Función Auxiliar getErrorMessage (similar a la del hook) ---
-// (Puedes moverla a un archivo de utilidades si la usas en varios sitios)
+// --- Función Auxiliar getErrorMessage ---
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -36,15 +34,22 @@ function getErrorMessage(error: unknown): string {
   if (typeof error === 'string') {
     return error;
   }
-  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
-    return (error as { message: string }).message || "Error con mensaje vacío.";
+  // Intenta manejar otros objetos con 'message' de forma más segura
+  if (error && typeof error === 'object' && 'message' in error) {
+    const maybeErrorWithMessage = error as { message?: unknown }; // Tipado más seguro
+    if (typeof maybeErrorWithMessage.message === 'string') {
+      return maybeErrorWithMessage.message || "Error con mensaje vacío.";
+    }
   }
   try {
       const errorString = String(error);
       if (errorString !== '[object Object]') {
           return errorString;
       }
-  } catch (e) { /* Ignorar */ }
+  // eslint-disable-next-line no-empty
+  } catch (_e) { // <--- CAMBIO: Prefijo '_' para 'e' no usado
+     /* Ignorar error de conversión */
+  }
   return "Ocurrió un error desconocido.";
 }
 // --- FIN Función Auxiliar ---
@@ -73,7 +78,6 @@ export async function POST(req: NextRequest) {
         pass: process.env.EMAIL_PASS,
       },
       tls: {
-          // Solo rechazar certificados no autorizados en producción
           rejectUnauthorized: process.env.NODE_ENV === 'production'
       }
     });
@@ -125,20 +129,18 @@ export async function POST(req: NextRequest) {
       html: emailHtml,
     };
 
-    console.log("API Route - Sending email..."); // Log antes de enviar
+    console.log("API Route - Sending email...");
     await transporter.sendMail(mailOptions);
     console.log("API Route - Email sent successfully to:", process.env.EMAIL_TO_ADMIN);
 
     return NextResponse.json({ message: 'Solicitud enviada con éxito.' }, { status: 200 });
 
-  } catch (error: unknown) { // <--- CAMBIO: error tipado como unknown
+  } catch (error: unknown) {
     console.error('API Route - Error en /solicitar-financiacion:', error);
-    // Usa la función auxiliar para obtener el mensaje de forma segura
     const errorMessage = getErrorMessage(error);
-    // Decide si mostrar el mensaje técnico o uno genérico en producción
     const clientErrorMessage = process.env.NODE_ENV === 'production'
         ? 'Ocurrió un error al procesar tu solicitud.'
-        : errorMessage; // Mostrar mensaje real en desarrollo
+        : errorMessage;
 
     return NextResponse.json({ message: 'Error interno del servidor.', error: clientErrorMessage }, { status: 500 });
   }

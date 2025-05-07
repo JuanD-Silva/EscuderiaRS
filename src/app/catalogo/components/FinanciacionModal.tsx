@@ -14,7 +14,6 @@ interface FinanciacionModalProps {
 }
 
 // --- Función Auxiliar getErrorMessage ---
-// (Puedes moverla a un archivo de utilidades si la usas en varios sitios)
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -22,16 +21,21 @@ function getErrorMessage(error: unknown): string {
   if (typeof error === 'string') {
     return error;
   }
-  // Intenta manejar otros objetos con 'message'
-  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
-    return (error as { message: string }).message || "Error con mensaje vacío.";
-  }
+  // Se elimina el chequeo inseguro de 'any' aquí, si la verificación anterior no funciona, recurre a String()
+  // if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+  //   return (error as { message: string }).message || "Error con mensaje vacío.";
+  // }
+  // Simplificación: intentar convertir a string directamente
   try {
       const errorString = String(error);
+      // Evitar devolver "[object Object]" si la conversión no es útil
       if (errorString !== '[object Object]') {
           return errorString;
       }
-  } catch (e) { /* Ignorar */ }
+  } catch (conversionError) { // Capturar error si String(error) falla
+      console.error("Error al convertir el error a string:", conversionError);
+  }
+  // Fallback final
   return "Ocurrió un error desconocido.";
 }
 // --- FIN Función Auxiliar ---
@@ -54,17 +58,14 @@ export const FinanciacionModal: React.FC<FinanciacionModalProps> = ({ isOpen, on
       const result = await response.json();
 
       if (!response.ok) {
-        // Intenta obtener un mensaje de error específico del backend del objeto 'result'
         const backendErrorMessage = result?.message || result?.error || `Error del servidor: ${response.status} ${response.statusText}`;
-        // Lanza un error estándar para ser capturado por el catch
         throw new Error(backendErrorMessage);
       }
 
       toast.success('¡Solicitud enviada con éxito! Nos pondremos en contacto pronto.', { id: toastId, duration: 5000 });
       onClose();
-    } catch (error: unknown) { // <--- CAMBIO: tipado como unknown
+    } catch (error: unknown) {
       console.error("Error al enviar la solicitud de financiación:", error);
-      // Usa la función auxiliar para obtener un mensaje seguro del error capturado
       const errorMessage = getErrorMessage(error);
       toast.error(errorMessage || 'No se pudo enviar la solicitud. Por favor, inténtalo de nuevo más tarde.', { id: toastId });
     }

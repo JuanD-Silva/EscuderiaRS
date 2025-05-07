@@ -10,7 +10,7 @@ interface FormFieldProps {
   label: string;
   type: 'text' | 'number' | 'date' | 'textarea' | 'checkbox' | 'file' | 'select' | 'currency';
   value: string | number | boolean | File | null | undefined;
-  onChange: (value: FormFieldValue) => void; // <--- CAMBIO: Usar FormFieldValue en lugar de any
+  onChange: (value: FormFieldValue | undefined) => void; // <--- Ajustado para permitir undefined potentialmente desde input numérico
   options?: readonly Readonly<{ value: string; label: string }>[];
   rows?: number;
   placeholder?: string;
@@ -26,7 +26,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   id, label, type, value, onChange, options = [], rows = 3,
   placeholder, required = false, disabled = false, error = null, accept = "image/*",
   imagePreviewUrl = null,
-  currencySymbol = '$', // <--- CAMBIO: Puedes ajustar el default, pero ahora se usará
+  currencySymbol = '$', // Mantener el default o cambiarlo si COP es más común
 }) => {
 
   const baseInputClasses = `
@@ -126,7 +126,7 @@ export const FormField: React.FC<FormFieldProps> = ({
                     accept={accept}
                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
                         const file = e.target.files?.[0];
-                        onChange(file || null);
+                        onChange(file || null); // Pasamos File | null
                     }}
                     disabled={disabled}
                     required={required}
@@ -146,7 +146,9 @@ export const FormField: React.FC<FormFieldProps> = ({
                            width={48}
                            height={48}
                            className="object-cover rounded"
-                           onError={(_e) => { // <--- CAMBIO: _e en lugar de e
+                           // --- CAMBIO: Prefijar el parámetro no usado con '_' ---
+                           onError={(_event) => { // Se usa '_event' para indicar que no se usa el argumento
+                            // No necesitas el evento aquí si solo haces log
                             console.warn(`Error cargando imagen preview: ${previewSrc}`);
                            }}
                          />
@@ -166,24 +168,29 @@ export const FormField: React.FC<FormFieldProps> = ({
       <div className={type === 'currency' ? 'relative' : ''}>
         {type === 'currency' && (
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                {/* 2. Usar la prop currencySymbol */}
-                <span className="text-gray-400 sm:text-sm">{currencySymbol}</span> {/* <--- CAMBIO: Usar currencySymbol */}
+                <span className="text-gray-400 sm:text-sm">{currencySymbol}</span>
             </div>
         )}
         <input
           id={id}
           name={id}
           type={(type === 'currency' || type === 'number') ? 'number' : type}
-          value={(value as string | number) ?? ''}
+          value={(value as string | number) ?? ''} // El valor puede ser string o number inicialmente
           onChange={(e: ChangeEvent<HTMLInputElement>) => {
-              onChange(e.target.value);
+              // Para number y currency, intentamos devolver un number o undefined si está vacío/inválido
+              if (type === 'number' || type === 'currency') {
+                  const num = e.target.valueAsNumber; // Intenta obtener el número
+                  onChange(Number.isNaN(num) ? undefined : num); // Pasa number o undefined
+              } else {
+                  onChange(e.target.value); // Para otros tipos, pasa el string
+              }
           }}
           placeholder={placeholder}
           required={required}
           disabled={disabled}
           className={`
             ${baseInputClasses} ${errorClasses}
-            ${type === 'currency' ? 'pl-7' : ''} // Ajusta pl-7 si el símbolo es más ancho que '$'
+            ${type === 'currency' ? 'pl-7' : ''}
             ${type === 'number' ? `
                 [&::-webkit-inner-spin-button]:appearance-none
                 [&::-webkit-outer-spin-button]:appearance-none

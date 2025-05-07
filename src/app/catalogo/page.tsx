@@ -4,15 +4,16 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import Head from "next/head";
 import Link from "next/link";
-// Asegúrate que la ruta sea correcta para tu estructura
-import { supabase, Vehiculo } from "@/app/admin/lib/supabase";
+// Quitar importación no utilizada si este es un componente de cliente
+// import { NextResponse } from "next/server"; 
+import { supabase, Vehiculo } from "@/app/admin/lib/supabase"; // Usando alias asumido '@/'
 
-// Importa los nuevos componentes
-import { FilterSidebar, Filters } from "./components/FilterSidebar"; // Corregida ruta
-import { VehicleCard } from "./components/VehicleCard"; // Corregida ruta
-import { SortDropdown, SortOption } from "./components/SortDropdown"; // Corregida ruta
+// Importa los componentes del catálogo
+import { FilterSidebar, Filters } from "./components/FilterSidebar";
+import { VehicleCard } from "./components/VehicleCard";
+import { SortDropdown, SortOption } from "./components/SortDropdown";
 
-// Importa iconos
+// Importa iconos y spinner
 import { FiFilter } from "react-icons/fi";
 import { ClipLoader } from "react-spinners";
 
@@ -39,20 +40,22 @@ const sortOptions: SortOption[] = [
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
-  // Intenta manejar errores de Supabase u otros objetos con 'message'
-  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
-    return (error as { message: string }).message || "Error con mensaje vacío.";
-  }
+  // Simplificado para evitar el 'any' y el problema con 'e' no usado
   try {
       const errorString = String(error);
       if (errorString !== '[object Object]') return errorString;
-  } catch (e) { /* Ignorar */ }
+  } catch (conversionError) {
+      console.error("Error al convertir el error a string:", conversionError);
+  }
   return "Ocurrió un error desconocido.";
 }
 // --- FIN Función Auxiliar ---
 
 // --- Componente Principal del Catálogo ---
 export default function CatalogoPage() {
+  // Quitar 'req' si no se usa (en componentes de cliente no se debería usar)
+  // const [req, setReq] = useState(null); // Ejemplo si existiera por error
+
   const [allVehicles, setAllVehicles] = useState<Vehiculo[]>([]);
   const [filteredVehicles, setFilteredVehicles] = useState<Vehiculo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,8 +73,7 @@ export default function CatalogoPage() {
       try {
         const { data, error } = await supabase
           .from("Autos")
-          // --- CAMBIO: Usar select('*') para obtener todas las columnas definidas en Vehiculo ---
-          .select("*")
+          .select("*") // Seleccionar todas las columnas para que coincida con el tipo Vehiculo
           .eq("vendido", false)
           .order("created_at", { ascending: false });
 
@@ -80,21 +82,21 @@ export default function CatalogoPage() {
           throw new Error(getErrorMessage(error));
         }
 
-        // Ahora 'data' debería ser compatible con Vehiculo[] si select('*') trae todas las columnas necesarias
-        setAllVehicles((data as Vehiculo[]) || []); // Casteo a Vehiculo[] y fallback a array vacío
+        // Asegurar que data es un array antes de asignarlo
+        // El casteo 'as Vehiculo[]' asume que los datos de Supabase coinciden con la interfaz
+        setAllVehicles((data as Vehiculo[]) || []);
 
-      } catch (err: unknown) {
+      } catch (err: unknown) { // Usar 'unknown'
         console.error("Error cargando vehículos:", err);
-        setErrorMsg(getErrorMessage(err));
+        setErrorMsg(getErrorMessage(err)); // Usar la función auxiliar
       } finally {
         setLoading(false);
       }
     }
     loadVehiculos();
-  }, []); // Carga inicial
+  }, []);
 
   const filterOptions = useMemo(() => {
-    // Esta lógica debería funcionar bien si allVehicles ahora tiene todas las propiedades
     const makes = new Set<string>();
     const modelsByMake: { [key: string]: Set<string> } = {};
     let minPrice = Infinity, maxPrice = 0;
@@ -102,6 +104,7 @@ export default function CatalogoPage() {
     let minKm = Infinity, maxKm = 0;
 
     allVehicles.forEach((v) => {
+      // Añadir comprobaciones por si alguna propiedad es null o undefined inesperadamente
       if (v.marca) makes.add(v.marca);
       if (v.marca && v.linea) {
         if (!modelsByMake[v.marca]) modelsByMake[v.marca] = new Set<string>();
@@ -123,6 +126,13 @@ export default function CatalogoPage() {
 
     const defaultMinYear = new Date().getFullYear() - 20;
     const defaultMaxYear = new Date().getFullYear();
+    // Valores fallback más robustos
+    const finalMinPrice = isFinite(minPrice) ? minPrice : 0;
+    const finalMaxPrice = isFinite(maxPrice) && maxPrice > 0 ? maxPrice : 150000000; // Ajusta un valor por defecto realista
+    const finalMinYear = isFinite(minYear) ? minYear : defaultMinYear;
+    const finalMaxYear = isFinite(maxYear) && maxYear > 0 ? maxYear : defaultMaxYear;
+    const finalMinKm = isFinite(minKm) ? minKm : 0;
+    const finalMaxKm = isFinite(maxKm) && maxKm > 0 ? maxKm : 500000; // Ajusta un valor por defecto realista
 
     return {
       makes: Array.from(makes).sort(),
@@ -130,39 +140,37 @@ export default function CatalogoPage() {
         acc[make] = Array.from(modelSet).sort();
         return acc;
       }, {} as { [key: string]: string[] }),
-      priceRange: { min: minPrice === Infinity ? 0 : minPrice, max: maxPrice === 0 ? 100000000 : maxPrice },
-      yearRange: { min: minYear === Infinity ? defaultMinYear : minYear, max: maxYear === 0 ? defaultMaxYear : maxYear },
-      kmRange: { min: minKm === Infinity ? 0 : minKm, max: maxKm === 0 ? 500000 : maxKm },
+      priceRange: { min: finalMinPrice, max: finalMaxPrice },
+      yearRange: { min: finalMinYear, max: finalMaxYear },
+      kmRange: { min: finalMinKm, max: finalMaxKm },
     };
   }, [allVehicles]);
 
   const applyFiltersAndSort = useCallback(() => {
-    // Esta lógica debería funcionar ahora que allVehicles son Vehiculo[] completos
     let tempVehicles = [...allVehicles];
-
     tempVehicles = tempVehicles.filter((v) => {
       if (filters.make !== "all" && v.marca !== filters.make) return false;
       if (filters.make !== "all" && filters.model !== "all" && v.linea !== filters.model) return false;
       const price = v.valor_venta ?? null;
-      if (price === null && (filters.priceRange.min || filters.priceRange.max)) return false;
-      if (filters.priceRange.min != null && price != null && price < filters.priceRange.min) return false;
-      if (filters.priceRange.max != null && price != null && price > filters.priceRange.max) return false;
+      if (price === null && (filters.priceRange?.min || filters.priceRange?.max)) return false;
+      if (filters.priceRange?.min != null && price != null && price < filters.priceRange.min) return false;
+      if (filters.priceRange?.max != null && price != null && price > filters.priceRange.max) return false;
       const year = v.modelo ?? null;
-      if (year === null && (filters.yearRange.min || filters.yearRange.max)) return false;
-      if (filters.yearRange.min != null && year != null && year < filters.yearRange.min) return false;
-      if (filters.yearRange.max != null && year != null && year > filters.yearRange.max) return false;
+      if (year === null && (filters.yearRange?.min || filters.yearRange?.max)) return false;
+      if (filters.yearRange?.min != null && year != null && year < filters.yearRange.min) return false;
+      if (filters.yearRange?.max != null && year != null && year > filters.yearRange.max) return false;
       const km = v.km ?? null;
-      if (km === null && (filters.kmRange.min || filters.kmRange.max)) return false;
-      if (filters.kmRange.min != null && km != null && km < filters.kmRange.min) return false;
-      if (filters.kmRange.max != null && km != null && km > filters.kmRange.max) return false;
+      if (km === null && (filters.kmRange?.min || filters.kmRange?.max)) return false;
+      if (filters.kmRange?.min != null && km != null && km < filters.kmRange.min) return false;
+      if (filters.kmRange?.max != null && km != null && km > filters.kmRange.max) return false;
       return true;
     });
 
     tempVehicles.sort((a, b) => {
       const valA_price = a.valor_venta ?? (sortBy === 'price_asc' ? Infinity : -Infinity);
       const valB_price = b.valor_venta ?? (sortBy === 'price_asc' ? Infinity : -Infinity);
-      const valA_year = a.modelo ?? 0;
-      const valB_year = b.modelo ?? 0;
+      const valA_year = a.modelo ?? (sortBy === 'year_asc' ? Infinity : -Infinity); // Ordenar nulos
+      const valB_year = b.modelo ?? (sortBy === 'year_asc' ? Infinity : -Infinity);
       const valA_km = a.km ?? (sortBy === 'km_asc' ? Infinity : -Infinity);
       const valB_km = b.km ?? (sortBy === 'km_asc' ? Infinity : -Infinity);
       const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -175,8 +183,7 @@ export default function CatalogoPage() {
         case "year_desc": return valB_year - valA_year;
         case "km_asc": return valA_km - valB_km;
         case "km_desc": return valB_km - valA_km;
-        case "newest":
-        default: return dateB - dateA;
+        case "newest": default: return dateB - dateA;
       }
     });
     setFilteredVehicles(tempVehicles);
@@ -237,8 +244,7 @@ export default function CatalogoPage() {
             options={filterOptions}
             onFilterChange={handleFilterChange}
             onReset={handleResetFilters}
-            // --- CAMBIO: Pasar el valor correctamente ---
-            vehicleCount={filteredVehicles.length}
+            vehicleCount={filteredVehicles.length} // Pasando el conteo correcto
           />
 
           <main className="flex-grow p-4 sm:p-6 lg:p-8 overflow-y-auto">
@@ -285,13 +291,13 @@ export default function CatalogoPage() {
                   <p className="text-sm mb-5">Intenta ajustar los filtros o eliminarlos para una búsqueda más amplia.</p>
                   <button
                       onClick={handleResetFilters}
-                      className="bg-red-700 hover:bg-red-600 text-white font-semibold px-5 py-2 rounded-lg text-sm transition-colors duration-200"
+                      className="bg-red-700 hover:bg-red-600 text-white font-semibold px-5 py-2 rounded-lg text-sm transition-colors duration-200 cursor-pointer"
                   >
                       Limpiar Filtros
                   </button>
               </div>
             )}
-            {!loading && !errorMsg && allVehicles.length === 0 && (
+             {!loading && !errorMsg && allVehicles.length === 0 && (
                  <p className="text-center text-gray-400 text-xl py-20">
                     Actualmente no hay vehículos disponibles en el catálogo.
                  </p>
@@ -302,7 +308,7 @@ export default function CatalogoPage() {
                 {filteredVehicles.map((vehicle, index) => (
                   <VehicleCard
                     key={vehicle.id}
-                    vehicle={vehicle} // vehicle aquí ya es de tipo Vehiculo si allVehicles está bien tipado
+                    vehicle={vehicle}
                     priority={index < 6}
                    />
                 ))}
