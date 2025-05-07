@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* Elimina flechas (Chrome, Safari, Edge, Opera) */
+[type=number]::-webkit-inner-spin-button,
+[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Elimina flechas (Firefox) */
+[type=number] {
+  -moz-appearance: textfield;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
