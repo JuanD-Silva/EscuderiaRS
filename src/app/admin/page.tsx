@@ -3,21 +3,20 @@
 
 import { useSession } from 'next-auth/react';
 import { Toaster } from 'react-hot-toast';
-import { VehicleForm } from './components/VehicleForm';
+import { VehicleForm } from './components/VehicleForm'; // Ya debería estar preparado para múltiples imágenes
 import { VehicleList } from './components/VehicleList';
-import { useVehicles } from './hooks/useVehicles';
+import { useVehicles } from './hooks/useVehicles'; // Asumimos que este hook ya está actualizado
 import Image from 'next/image';
 import { useEffect } from 'react';
-import { Vehiculo } from '@/app/admin/lib/supabase'; // Mantuve tu alias de ruta
+import { Vehiculo } from '@/app/admin/lib/supabase'; 
 
-// Componente DateFilterControls
+// Componente DateFilterControls (sin cambios respecto a tu versión)
 const DateFilterControls: React.FC<{
   filtroMes: number;
   setFiltroMes: (mes: number) => void;
   filtroAnio: number;
   setFiltroAnio: (anio: number) => void;
-  // onApplyFilters?: () => void; // Eliminado porque no se usa el botón aplicar
-}> = ({ filtroMes, setFiltroMes, filtroAnio, setFiltroAnio /* onApplyFilters eliminado de la desestructuración */ }) => {
+}> = ({ filtroMes, setFiltroMes, filtroAnio, setFiltroAnio }) => {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 10 }, (_, i) => currentYear - i);
 
@@ -50,19 +49,13 @@ const DateFilterControls: React.FC<{
             {years.map(year => <option key={year} value={year} />)}
         </datalist>
       </div>
-      {/* Botón aplicar eliminado o mantenido comentado ya que onApplyFilters no se usa */}
     </div>
   );
 };
 
 
 export default function AdminPage() {
-  // Solo desestructurar 'status' si 'session' no se usa en el resto del componente.
-  // 'required: true' ya maneja la protección de la ruta.
   const { status } = useSession({ required: true });
-  // Si necesitas usar 'session' (ej. para mostrar nombre), descomenta la siguiente línea
-  // y asegúrate de usar la variable 'session'.
-  // const { data: session, status } = useSession({ required: true });
 
   const {
     vehiculos,
@@ -77,18 +70,23 @@ export default function AdminPage() {
     setFiltroAnio,
     loadVehiculosVendidos,
     formData,
-    imageFile,
+    // Props para múltiples imágenes del hook useVehicles
+    imageFiles,         // Cambiado de imageFile
+    existingImageUrls,
+    handleImageChange,  // Ahora espera FileList | null
+    handleRemoveNewImage,
+    handleRemoveExistingImage,
+    // Fin props múltiples imágenes
     editId,
     isSubmitting,
     generalError,
-    handleImageChange,
     updateFormField,
     handleSubmit,
     handleDelete,
     handleMarkAsSold,
     startEdit,
     clearForm,
-  } = useVehicles();
+  } = useVehicles(); // Asumimos que useVehicles ya exporta estas nuevas props
 
   useEffect(() => {
     if (activeTab === 'vendidos') {
@@ -183,8 +181,13 @@ export default function AdminPage() {
             <VehicleForm
                 formData={formData}
                 onUpdateField={updateFormField}
-                imageFile={imageFile}
-                onImageChange={handleImageChange}
+                // Props para múltiples imágenes
+                imageFiles={imageFiles}                 // Pasar el array de nuevos archivos
+                existingImageUrls={existingImageUrls}   // Pasar las URLs existentes
+                onImageChange={handleImageChange}       // Pasar el handler que acepta FileList
+                onRemoveNewImage={handleRemoveNewImage} // Pasar handler para quitar nuevos
+                onRemoveExistingImage={handleRemoveExistingImage} // Pasar handler para quitar existentes
+                // Fin props múltiples imágenes
                 onSubmit={handleSubmit}
                 isEdit={!!editId}
                 onCancelEdit={clearForm}
@@ -198,8 +201,8 @@ export default function AdminPage() {
               onDelete={handleDelete}
               listType="inventario"
             />
-          </div> // <- Cierre del div space-y-10
-        )} {/* <- Cierre del bloque inventario */}
+          </div> 
+        )} 
 
         {activeTab === 'vendidos' && (
           <div className="bg-gray-800/70 backdrop-blur-sm p-4 sm:p-6 rounded-lg shadow-md border border-gray-700">
@@ -233,7 +236,6 @@ export default function AdminPage() {
               onEdit={handleEditSoldVehicle}
               onDelete={handleDeleteSoldVehicle}
               listType="vendidos"
-              // onMarkAsSold se omite aquí a propósito
             />
           </div>
         )}

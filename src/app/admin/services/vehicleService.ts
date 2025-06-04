@@ -1,21 +1,18 @@
 // src/app/admin/services/vehicleService.ts
 import { supabase, VehiculoFormData, Vehiculo } from "../lib/supabase";
 
-// --- Tipo de Payload para Supabase ---
 type VehiculoPayload = Partial<Omit<Vehiculo, 'id' | 'created_at'>>;
 
-// --- Función Auxiliar getErrorMessage ---
 function getErrorMessage(error: unknown): string {
+  // ... (sin cambios)
   if (error instanceof Error) {
     return error.message;
   }
   if (typeof error === 'string') {
     return error;
   }
-  // Intenta manejar errores de Supabase u otros objetos con 'message'
-  // de forma más segura sin 'as any' explícito
   if (error && typeof error === 'object' && 'message' in error) {
-    const maybeErrorWithMessage = error as { message?: unknown }; // Tipado más seguro
+    const maybeErrorWithMessage = error as { message?: unknown }; 
     if (typeof maybeErrorWithMessage.message === 'string') {
       return maybeErrorWithMessage.message || "Error con mensaje vacío.";
     }
@@ -25,15 +22,12 @@ function getErrorMessage(error: unknown): string {
       if (errorString !== '[object Object]') {
           return errorString;
       }
-  // eslint-disable-next-line no-empty
-  } catch (_e) { // <--- CAMBIO: Prefijar 'e' con '_' ya que no se usa
-     /* Ignorar error de conversión */
-  }
+  } catch (_e) { /* Ignorar */ }
   return "Ocurrió un error desconocido.";
 }
 
-// --- Función de Parseo ---
-function parseAndValidateFormData(formData: VehiculoFormData, imageUrl?: string | null): Partial<Vehiculo> {
+// La función de parseo ahora directamente usa formData.imagenes que ya viene como string formateado
+function parseAndValidateFormData(formData: VehiculoFormData): Partial<Vehiculo> {
   const parsed: Partial<Vehiculo> = {};
 
   parsed.linea = formData.linea?.trim() || null;
@@ -55,27 +49,29 @@ function parseAndValidateFormData(formData: VehiculoFormData, imageUrl?: string 
   const kmNum = parseInt(formData.km, 10);
   parsed.km = !isNaN(kmNum) ? kmNum : null;
 
-  const valorNum = parseFloat(formData.valor_venta);
+  const valorNum = parseFloat(String(formData.valor_venta).replace(/[^0-9.-]+/g,"")); // Limpiar formato moneda
   parsed.valor_venta = !isNaN(valorNum) ? valorNum : null;
 
   parsed.reporte = formData.reporte ?? false;
   parsed.prenda = formData.prenda ?? false;
-  parsed.imagenes = imageUrl ?? (formData.imagenes || null);
+  
+  // formData.imagenes ya viene como el string formateado "{url1,url2}" o string vacío/null
+  parsed.imagenes = formData.imagenes && formData.imagenes.trim() !== "" ? formData.imagenes.trim() : null;
 
-  // Validación básica
+
   if (!parsed.marca || !parsed.linea || !parsed.modelo || !parsed.placa || !parsed.valor_venta) {
       console.warn("Advertencia: Campos obligatorios faltantes o inválidos en parseAndValidateFormData:", parsed);
-      // throw new Error("Faltan campos obligatorios."); // Considera lanzar error
   }
 
   return parsed;
 }
 
-// --- Funciones de Servicio CRUD ---
 
-export async function createVehiculo(formData: VehiculoFormData, imageUrl: string | null): Promise<Vehiculo> {
-  const parsedData: Partial<Vehiculo> = parseAndValidateFormData(formData, imageUrl);
-  parsedData.vendido = false;
+// createVehiculo ahora no necesita el argumento imageUrl separado,
+// ya que formData.imagenes contendrá el string de URLs formateado desde el hook.
+export async function createVehiculo(formData: VehiculoFormData, _imageUrl_deprecated: string | null /*No usado*/): Promise<Vehiculo> {
+  const parsedData: Partial<Vehiculo> = parseAndValidateFormData(formData);
+  parsedData.vendido = false; // Por defecto no está vendido al crear
   delete parsedData.id;
   delete parsedData.created_at;
 
@@ -101,6 +97,7 @@ export async function createVehiculo(formData: VehiculoFormData, imageUrl: strin
 }
 
 export async function fetchVehiculos() {
+    // ... (sin cambios)
     console.log("[fetchVehiculos] Obteniendo todos los vehículos...");
     const result = await supabase
         .from("Autos")
@@ -109,20 +106,18 @@ export async function fetchVehiculos() {
     console.log(`[fetchVehiculos] Se encontraron ${result.data?.length ?? 0} vehículos.`);
     if(result.error) {
         console.error("[fetchVehiculos] Error de Supabase:", result.error);
-        // Lanzar error para que el hook lo maneje consistentemente
         throw new Error(getErrorMessage(result.error));
     }
-    // Devolver solo data si el hook está preparado para eso,
-    // o mantener la devolución de { data, error } si el hook lo necesita.
-    // Asumiendo que el hook solo necesita 'data' tras verificar 'error'
-    return result; // Devolver el objeto completo para que el hook maneje data/error
+    return result;
 }
 
+// updateVehiculo también usa formData.imagenes que ya viene como string formateado.
 export async function updateVehiculo(id: number, formData: VehiculoFormData): Promise<Vehiculo> {
-    const parsedData: Partial<Vehiculo> = parseAndValidateFormData(formData, formData.imagenes);
+    const parsedData: Partial<Vehiculo> = parseAndValidateFormData(formData);
     delete parsedData.id;
     delete parsedData.created_at;
-    delete parsedData.vendido;
+    // 'vendido' no se actualiza desde este formulario general, sino con marcarComoVendido
+    // delete parsedData.vendido; // Comentado, ya que 'vendido' no está en VehiculoFormData, pero sí en Vehiculo
 
     const payload: VehiculoPayload = parsedData;
     console.log("Actualizando ID", id, "con payload:", payload);
@@ -147,22 +142,22 @@ export async function updateVehiculo(id: number, formData: VehiculoFormData): Pr
 }
 
 export async function deleteVehiculo(id: number) {
+  // ... (sin cambios en su lógica principal, la eliminación de imágenes de storage se maneja en el hook)
   console.log("[deleteVehiculo] Eliminando ID:", id);
-  const { error } = await supabase.from("Autos").delete().eq("id", id); // No necesitamos 'data' para delete
+  const { error } = await supabase.from("Autos").delete().eq("id", id); 
   if (error) {
     console.error("[deleteVehiculo] Error de Supabase:", error);
-    throw new Error(getErrorMessage(error)); // Lanza el error
+    throw new Error(getErrorMessage(error)); 
   }
   console.log(`[deleteVehiculo] Solicitud de eliminación para ID ${id} enviada.`);
-  // No es necesario devolver nada si la operación fue exitosa y no lanzó error
 }
 
 export async function marcarComoVendido(id: number): Promise<Vehiculo> {
+  // ... (sin cambios)
   console.log("[marcarComoVendido] Marcando como vendido ID:", id);
   const updatePayload = {
     vendido: true,
     fecha_venta: new Date().toISOString(),
-    // estado: 'vendido' // Si aplica
   };
   console.log("[marcarComoVendido] Payload de actualización:", updatePayload);
 
@@ -186,6 +181,7 @@ export async function marcarComoVendido(id: number): Promise<Vehiculo> {
 }
 
 export async function fetchVehiculosVendidos(filters?: { month?: number, year?: number }): Promise<Vehiculo[]> {
+    // ... (sin cambios)
     console.log("[fetchVehiculosVendidos] Obteniendo vehículos vendidos con filtros:", filters);
     let query = supabase
         .from("Autos")
@@ -213,7 +209,6 @@ export async function fetchVehiculosVendidos(filters?: { month?: number, year?: 
         console.error("[fetchVehiculosVendidos] Error fetching vehículos vendidos:", error);
         throw new Error(getErrorMessage(error));
     }
-    // Devolver un array vacío directamente si data es null o undefined
     const resultData = data || [];
     console.log("[fetchVehiculosVendidos] Vehículos vendidos encontrados:", resultData.length);
     return resultData as Vehiculo[];

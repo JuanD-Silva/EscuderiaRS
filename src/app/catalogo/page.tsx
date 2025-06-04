@@ -4,17 +4,14 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import Head from "next/head";
 import Link from "next/link";
-// Quitar importación no utilizada si este es un componente de cliente
-// import { NextResponse } from "next/server"; 
-import { supabase, Vehiculo } from "@/app/admin/lib/supabase"; // Usando alias asumido '@/'
+import { supabase, Vehiculo } from "@/app/admin/lib/supabase"; 
 
-// Importa los componentes del catálogo
 import { FilterSidebar, Filters } from "./components/FilterSidebar";
 import { VehicleCard } from "./components/VehicleCard";
 import { SortDropdown, SortOption } from "./components/SortDropdown";
+import { VehicleDetailModal } from "./components/VehicleDetailModal"; 
 
-// Importa iconos y spinner
-import { FiFilter } from "react-icons/fi";
+import { FiFilter, FiImage } from "react-icons/fi"; // FiImage para placeholder
 import { ClipLoader } from "react-spinners";
 
 // --- Constantes y Tipos ---
@@ -36,11 +33,9 @@ const sortOptions: SortOption[] = [
   { value: "km_desc", label: "Kilometraje (Mayor)" },
 ];
 
-// --- Función Auxiliar getErrorMessage ---
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
-  // Simplificado para evitar el 'any' y el problema con 'e' no usado
   try {
       const errorString = String(error);
       if (errorString !== '[object Object]') return errorString;
@@ -49,13 +44,8 @@ function getErrorMessage(error: unknown): string {
   }
   return "Ocurrió un error desconocido.";
 }
-// --- FIN Función Auxiliar ---
 
-// --- Componente Principal del Catálogo ---
 export default function CatalogoPage() {
-  // Quitar 'req' si no se usa (en componentes de cliente no se debería usar)
-  // const [req, setReq] = useState(null); // Ejemplo si existiera por error
-
   const [allVehicles, setAllVehicles] = useState<Vehiculo[]>([]);
   const [filteredVehicles, setFilteredVehicles] = useState<Vehiculo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +53,32 @@ export default function CatalogoPage() {
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [sortBy, setSortBy] = useState<string>(sortOptions[0].value);
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+
+  const [selectedVehicleForDetail, setSelectedVehicleForDetail] = useState<Vehiculo | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+
+  // Estado para asegurar que el modal solo se renderice en el cliente después del montaje
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  const handleOpenDetailModal = useCallback((vehicle: Vehiculo) => {
+    setSelectedVehicleForDetail(vehicle);
+    setIsDetailModalOpen(true);
+    if (typeof document !== 'undefined') {
+        document.body.style.overflow = 'hidden'; 
+    }
+  }, []);
+
+  const handleCloseDetailModal = useCallback(() => {
+    setIsDetailModalOpen(false);
+    setSelectedVehicleForDetail(null);
+    if (typeof document !== 'undefined') {
+        document.body.style.overflow = ''; 
+    }
+  }, []);
 
   useEffect(() => {
     async function loadVehiculos() {
@@ -73,22 +89,17 @@ export default function CatalogoPage() {
       try {
         const { data, error } = await supabase
           .from("Autos")
-          .select("*") // Seleccionar todas las columnas para que coincida con el tipo Vehiculo
-          .eq("vendido", false)
-          .order("created_at", { ascending: false });
+          .select("*") 
+          .order("created_at", { ascending: false }); // Mostrar todos, vendidos y no vendidos
 
         if (error) {
           console.error("Error Supabase al obtener vehículos:", error);
           throw new Error(getErrorMessage(error));
         }
-
-        // Asegurar que data es un array antes de asignarlo
-        // El casteo 'as Vehiculo[]' asume que los datos de Supabase coinciden con la interfaz
         setAllVehicles((data as Vehiculo[]) || []);
-
-      } catch (err: unknown) { // Usar 'unknown'
+      } catch (err: unknown) { 
         console.error("Error cargando vehículos:", err);
-        setErrorMsg(getErrorMessage(err)); // Usar la función auxiliar
+        setErrorMsg(getErrorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -104,7 +115,6 @@ export default function CatalogoPage() {
     let minKm = Infinity, maxKm = 0;
 
     allVehicles.forEach((v) => {
-      // Añadir comprobaciones por si alguna propiedad es null o undefined inesperadamente
       if (v.marca) makes.add(v.marca);
       if (v.marca && v.linea) {
         if (!modelsByMake[v.marca]) modelsByMake[v.marca] = new Set<string>();
@@ -126,13 +136,12 @@ export default function CatalogoPage() {
 
     const defaultMinYear = new Date().getFullYear() - 20;
     const defaultMaxYear = new Date().getFullYear();
-    // Valores fallback más robustos
     const finalMinPrice = isFinite(minPrice) ? minPrice : 0;
-    const finalMaxPrice = isFinite(maxPrice) && maxPrice > 0 ? maxPrice : 150000000; // Ajusta un valor por defecto realista
+    const finalMaxPrice = isFinite(maxPrice) && maxPrice > 0 ? maxPrice : 150000000; 
     const finalMinYear = isFinite(minYear) ? minYear : defaultMinYear;
     const finalMaxYear = isFinite(maxYear) && maxYear > 0 ? maxYear : defaultMaxYear;
     const finalMinKm = isFinite(minKm) ? minKm : 0;
-    const finalMaxKm = isFinite(maxKm) && maxKm > 0 ? maxKm : 500000; // Ajusta un valor por defecto realista
+    const finalMaxKm = isFinite(maxKm) && maxKm > 0 ? maxKm : 500000;
 
     return {
       makes: Array.from(makes).sort(),
@@ -148,6 +157,11 @@ export default function CatalogoPage() {
 
   const applyFiltersAndSort = useCallback(() => {
     let tempVehicles = [...allVehicles];
+    // Filtrar primero los no vendidos para la vista principal del catálogo
+    // Si quieres mostrar todos y que el modal indique si está vendido, quita este filtro.
+    // Por ahora, lo mantendré para que el catálogo principal solo muestre disponibles.
+    tempVehicles = tempVehicles.filter(v => !v.vendido);
+
     tempVehicles = tempVehicles.filter((v) => {
       if (filters.make !== "all" && v.marca !== filters.make) return false;
       if (filters.make !== "all" && filters.model !== "all" && v.linea !== filters.model) return false;
@@ -169,7 +183,7 @@ export default function CatalogoPage() {
     tempVehicles.sort((a, b) => {
       const valA_price = a.valor_venta ?? (sortBy === 'price_asc' ? Infinity : -Infinity);
       const valB_price = b.valor_venta ?? (sortBy === 'price_asc' ? Infinity : -Infinity);
-      const valA_year = a.modelo ?? (sortBy === 'year_asc' ? Infinity : -Infinity); // Ordenar nulos
+      const valA_year = a.modelo ?? (sortBy === 'year_asc' ? Infinity : -Infinity); 
       const valB_year = b.modelo ?? (sortBy === 'year_asc' ? Infinity : -Infinity);
       const valA_km = a.km ?? (sortBy === 'km_asc' ? Infinity : -Infinity);
       const valB_km = b.km ?? (sortBy === 'km_asc' ? Infinity : -Infinity);
@@ -237,26 +251,26 @@ export default function CatalogoPage() {
         </header>
 
         <div className="flex flex-1 flex-col lg:flex-row">
-          <FilterSidebar
+           <FilterSidebar
             isOpen={isMobileFilterOpen}
             onClose={() => setIsMobileFilterOpen(false)}
             filters={filters}
             options={filterOptions}
             onFilterChange={handleFilterChange}
             onReset={handleResetFilters}
-            vehicleCount={filteredVehicles.length} // Pasando el conteo correcto
+            vehicleCount={filteredVehicles.length}
           />
 
           <main className="flex-grow p-4 sm:p-6 lg:p-8 overflow-y-auto">
             <h1 className="text-3xl sm:text-4xl font-black text-center lg:text-left text-gray-100 mb-6 sm:mb-8">
               Vehículos Disponibles
             </h1>
-
             <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
               <p className="text-sm text-gray-400 order-2 sm:order-1">
                 {loading
                   ? 'Buscando vehículos...'
-                  : `${filteredVehicles.length} vehículo(s) ${allVehicles.length > 0 && filteredVehicles.length !== allVehicles.length ? `de ${allVehicles.length}` : 'encontrado(s)'}`
+                  // Ajuste para contar sobre los vehículos disponibles (no vendidos) que se muestran en el catálogo
+                  : `${filteredVehicles.length} vehículo(s) ${allVehicles.filter(v => !v.vendido).length > 0 && filteredVehicles.length !== allVehicles.filter(v => !v.vendido).length ? `de ${allVehicles.filter(v => !v.vendido).length}` : 'encontrado(s)'}`
                  }
               </p>
               <div className="order-1 sm:order-2 w-full sm:w-auto">
@@ -285,7 +299,7 @@ export default function CatalogoPage() {
                 <p className="text-sm">{errorMsg}</p>
               </div>
             )}
-            {!loading && !errorMsg && filteredVehicles.length === 0 && allVehicles.length > 0 && (
+            {!loading && !errorMsg && filteredVehicles.length === 0 && allVehicles.filter(v => !v.vendido).length > 0 && (
               <div className="text-center text-gray-400 bg-gray-900/30 border border-gray-700/50 p-8 rounded-lg max-w-lg mx-auto my-10 shadow-md">
                   <p className="font-semibold text-lg mb-2">No se encontraron vehículos</p>
                   <p className="text-sm mb-5">Intenta ajustar los filtros o eliminarlos para una búsqueda más amplia.</p>
@@ -297,7 +311,7 @@ export default function CatalogoPage() {
                   </button>
               </div>
             )}
-             {!loading && !errorMsg && allVehicles.length === 0 && (
+             {!loading && !errorMsg && allVehicles.filter(v => !v.vendido).length === 0 && (
                  <p className="text-center text-gray-400 text-xl py-20">
                     Actualmente no hay vehículos disponibles en el catálogo.
                  </p>
@@ -310,6 +324,7 @@ export default function CatalogoPage() {
                     key={vehicle.id}
                     vehicle={vehicle}
                     priority={index < 6}
+                    onViewDetails={handleOpenDetailModal}
                    />
                 ))}
               </div>
@@ -323,6 +338,15 @@ export default function CatalogoPage() {
           </p>
         </footer>
       </div>
+
+      {/* --- Renderizar el Modal de Detalles del Vehículo (solo si hasMounted es true) --- */}
+      {hasMounted && (
+        <VehicleDetailModal
+          isOpen={isDetailModalOpen}
+          onClose={handleCloseDetailModal}
+          vehicle={selectedVehicleForDetail}
+        />
+      )}
     </>
   );
 }

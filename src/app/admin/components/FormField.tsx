@@ -1,16 +1,17 @@
 // src/app/admin/components/FormField.tsx
 import React, { ChangeEvent } from 'react';
-import Image from 'next/image'; // Para preview de imagen
+import Image from 'next/image';
+import { FiPaperclip, FiTrash2, FiUploadCloud } from 'react-icons/fi'; // Para iconos
 
-// 1. Definir un tipo más específico para el valor de onChange
-type FormFieldValue = string | number | boolean | File | null;
+type FormFieldValue = string | number | boolean | File | FileList | null; // FileList para múltiples archivos
 
 interface FormFieldProps {
   id: string;
   label: string;
   type: 'text' | 'number' | 'date' | 'textarea' | 'checkbox' | 'file' | 'select' | 'currency';
-  value: string | number | boolean | File | null | undefined;
-  onChange: (value: FormFieldValue | undefined) => void; // <--- Ajustado para permitir undefined potentialmente desde input numérico
+  value: string | number | boolean | File | FileList | null | undefined; // El estado del form puede tener FileList
+  onChange: (value: FormFieldValue | undefined, fieldId?: string) // fieldId es opcional
+    => void; 
   options?: readonly Readonly<{ value: string; label: string }>[];
   rows?: number;
   placeholder?: string;
@@ -18,15 +19,20 @@ interface FormFieldProps {
   disabled?: boolean;
   error?: string | null;
   accept?: string;
-  imagePreviewUrl?: string | null;
+  // Para múltiples imágenes
+  multiple?: boolean; // Nueva prop para permitir selección múltiple
+  imagePreviews?: { url: string, name?: string, type: 'existing' | 'new' }[]; // Array de URLs para previsualización
+  onRemoveImagePreview?: (index: number, type: 'existing' | 'new') => void; // Para quitar imágenes
   currencySymbol?: string;
 }
 
 export const FormField: React.FC<FormFieldProps> = ({
   id, label, type, value, onChange, options = [], rows = 3,
   placeholder, required = false, disabled = false, error = null, accept = "image/*",
-  imagePreviewUrl = null,
-  currencySymbol = '$', // Mantener el default o cambiarlo si COP es más común
+  multiple = false, // default a false
+  imagePreviews = [],
+  onRemoveImagePreview,
+  currencySymbol = '$',
 }) => {
 
   const baseInputClasses = `
@@ -37,6 +43,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   const errorClasses = error ? 'border-red-500 ring-red-500' : 'border-gray-600';
 
   if (type === 'checkbox') {
+    // ... (sin cambios)
     return (
       <div className="flex flex-col">
         <label htmlFor={id} className="flex items-center gap-2 cursor-pointer">
@@ -57,6 +64,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   }
 
   if (type === 'textarea') {
+    // ... (sin cambios)
     return (
       <div className="w-full">
         <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">
@@ -79,7 +87,8 @@ export const FormField: React.FC<FormFieldProps> = ({
   }
 
   if (type === 'select') {
-    return (
+    // ... (sin cambios)
+     return (
       <div className="w-full">
         <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">
           {label} {required && <span className="text-red-500">*</span>}
@@ -106,60 +115,80 @@ export const FormField: React.FC<FormFieldProps> = ({
   }
 
   if (type === 'file') {
-    let previewSrc: string | null = null;
-    if (value instanceof File) {
-        previewSrc = URL.createObjectURL(value);
-    } else if (imagePreviewUrl && (imagePreviewUrl.startsWith('http') || imagePreviewUrl.startsWith('blob:'))) {
-        previewSrc = imagePreviewUrl;
-    }
-
     return (
-        <div className="w-full">
-            <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">
-                 {label} {required && <span className="text-red-500">*</span>}
+        <div className="w-full space-y-3">
+            <label htmlFor={id} className="block text-sm font-medium text-gray-300">
+                 {label} {required && !imagePreviews.length && <span className="text-red-500">*</span>}
             </label>
-            <div className="flex items-center gap-4">
+            <div className={`
+              relative flex items-center justify-center w-full px-3 py-4 rounded-md 
+              border-2 border-dashed border-gray-600 hover:border-red-500 transition-colors
+              ${errorClasses} ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-800' : 'bg-gray-800/50 cursor-pointer'}
+            `}>
                 <input
                     id={id}
                     name={id}
                     type="file"
                     accept={accept}
+                    multiple={multiple} // Usar la prop multiple
                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                        const file = e.target.files?.[0];
-                        onChange(file || null); // Pasamos File | null
+                        // Para múltiples archivos, e.target.files es un FileList
+                        // Para un solo archivo, también es un FileList (con un solo elemento o vacío)
+                        onChange(e.target.files); // Pasar el FileList completo
                     }}
                     disabled={disabled}
-                    required={required}
-                    className={`
-                        block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4
-                        file:rounded-md file:border-0 file:text-sm file:font-semibold
-                        file:bg-red-700/80 file:text-white hover:file:bg-red-600
-                        cursor-pointer file:cursor-pointer file:transition-colors file:duration-150
-                        ${baseInputClasses} p-0 ${errorClasses} overflow-hidden
-                    `}
+                    // 'required' es difícil de manejar directamente con FileList, se valida en el hook
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
                 />
-                 {previewSrc && (
-                     <div className="flex-shrink-0">
-                        <Image
-                           src={previewSrc}
-                           alt="Preview"
-                           width={48}
-                           height={48}
-                           className="object-cover rounded"
-                           // --- CAMBIO: Prefijar el parámetro no usado con '_' ---
-                           onError={(_event) => { // Se usa '_event' para indicar que no se usa el argumento
-                            // No necesitas el evento aquí si solo haces log
-                            console.warn(`Error cargando imagen preview: ${previewSrc}`);
-                           }}
-                         />
-                    </div>
-                )}
+                <div className="text-center">
+                  <FiUploadCloud className="mx-auto h-8 w-8 text-gray-400" />
+                  <p className="mt-1 text-xs text-gray-400">
+                    <span className="font-semibold text-red-400">Haz clic para subir</span> o arrastra y suelta
+                  </p>
+                  {multiple && <p className="text-xs text-gray-500">Puedes seleccionar varias imágenes</p>}
+                  <p className="text-xs text-gray-500 mt-0.5">{accept.replace('image/', '').toUpperCase()}</p>
+                </div>
             </div>
+
+            {imagePreviews && imagePreviews.length > 0 && (
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {imagePreviews.map((preview, index) => (
+                  <div key={preview.url || index} className="relative group aspect-square border border-gray-700 rounded-md overflow-hidden">
+                    <Image
+                       src={preview.url}
+                       alt={preview.name || `Preview ${index + 1}`}
+                       fill
+                       sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 20vw"
+                       className="object-cover"
+                       onError={(e) => {
+                         console.warn(`Error cargando imagen preview: ${preview.url}`);
+                         e.currentTarget.src = '/placeholder.png'; // Fallback
+                       }}
+                     />
+                    {onRemoveImagePreview && !disabled && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveImagePreview(index, preview.type)}
+                        className="absolute top-1 right-1 bg-black/60 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500"
+                        aria-label="Eliminar imagen"
+                      >
+                        <FiTrash2 size={12} />
+                      </button>
+                    )}
+                    {/* Opcional: Mostrar nombre del archivo o si es nueva/existente */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] px-1.5 py-0.5 truncate">
+                      {preview.name ? (preview.name.length > 15 ? preview.name.substring(0,12) + '...' : preview.name) : (preview.type === 'new' ? 'Nueva' : 'Existente')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
              {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
         </div>
     );
-}
+  }
 
+  // Inputs estándar (text, number, date, currency)
   return (
     <div className="w-full">
       <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">
@@ -175,14 +204,13 @@ export const FormField: React.FC<FormFieldProps> = ({
           id={id}
           name={id}
           type={(type === 'currency' || type === 'number') ? 'number' : type}
-          value={(value as string | number) ?? ''} // El valor puede ser string o number inicialmente
+          value={(value as string | number) ?? ''}
           onChange={(e: ChangeEvent<HTMLInputElement>) => {
-              // Para number y currency, intentamos devolver un number o undefined si está vacío/inválido
               if (type === 'number' || type === 'currency') {
-                  const num = e.target.valueAsNumber; // Intenta obtener el número
-                  onChange(Number.isNaN(num) ? undefined : num); // Pasa number o undefined
+                  const num = e.target.valueAsNumber; 
+                  onChange(Number.isNaN(num) ? undefined : num); 
               } else {
-                  onChange(e.target.value); // Para otros tipos, pasa el string
+                  onChange(e.target.value);
               }
           }}
           placeholder={placeholder}

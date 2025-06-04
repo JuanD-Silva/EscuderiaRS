@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import toast from 'react-hot-toast';
-import { supabase, VehiculoFormData, Vehiculo } from "../lib/supabase"; // Asegúrate que las rutas sean correctas
+import { supabase, VehiculoFormData, Vehiculo } from "../lib/supabase";
 import {
   createVehiculo as apiCreateVehiculo,
   fetchVehiculos as apiFetchVehiculos,
@@ -11,23 +11,20 @@ import {
   deleteVehiculo as apiDeleteVehiculo,
   marcarComoVendido as apiMarcarComoVendido,
   fetchVehiculosVendidos as apiFetchVehiculosVendidos,
-} from "../services/vehicleService"; // Asegúrate que las rutas sean correctas
+} from "../services/vehicleService";
+import { getAllImageUrlsFromString } from "@/app/lib/utils"; // Para parsear al editar
 
 const initialFormData: VehiculoFormData = {
     linea: "", marca: "", modelo: "", km: "", tipo_caja: "", valor_venta: "",
     propietario_ubicacion: "", descripcion: "", soat: "", tecno: "", color: "",
     lugar_matricula: "", reporte: false, prenda: false, motor: "",
-    estado: "disponible", imagenes: "", placa: "",
+    estado: "disponible", imagenes: "", placa: "", // 'imagenes' en formData se mantiene como string para la URL existente al editar
 };
 
-// Función auxiliar para obtener mensajes de error de forma segura
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
-  // Intenta manejar errores de Supabase u otros objetos con 'message'
-  // Evita usar 'as any' aquí si es posible, pero a veces es necesario si el tipo de error es muy variado
   if (error && typeof error === 'object' && 'message' in error) {
-    // Castea de forma más segura si sabes que es un objeto con message
     const maybeErrorWithMessage = error as { message?: unknown };
     if (typeof maybeErrorWithMessage.message === 'string') {
       return maybeErrorWithMessage.message || "Error con mensaje vacío.";
@@ -36,9 +33,7 @@ function getErrorMessage(error: unknown): string {
   try {
     const errorString = String(error);
     if (errorString !== '[object Object]') return errorString;
-  } catch (_e) { // <--- CAMBIO: Prefijar 'e' no usado con '_'
-    // Ignorar error de conversión
-  }
+  } catch (_e) { /* Ignorar */ }
   return "Ocurrió un error desconocido.";
 }
 
@@ -51,25 +46,28 @@ export function useVehicles() {
   const [activeTab, setActiveTab] = useState<'inventario' | 'vendidos'>('inventario');
   const [filtroMes, setFiltroMes] = useState<number>(new Date().getMonth() + 1);
   const [filtroAnio, setFiltroAnio] = useState<number>(new Date().getFullYear());
+  
   const [formData, setFormData] = useState<VehiculoFormData>(initialFormData);
-  const [imageFile, setImageFile] = useState<File | null>(null);
   const [editId, setEditId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Estados para múltiples imágenes
+  const [imageFiles, setImageFiles] = useState<File[]>([]); // Nuevos archivos a subir
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]); // URLs de imágenes ya guardadas (al editar)
+  const [imageUrlsToDelete, setImageUrlsToDelete] = useState<string[]>([]); // URLs marcadas para borrar del storage al actualizar
+
   const loadVehiculos = useCallback(async () => {
+    // ... (sin cambios)
     console.log("[useVehicles] Cargando vehículos de inventario...");
     setIsLoadingList(true);
     setGeneralError(null);
     try {
-      // fetchVehiculos devuelve { data, error }
       const { data, error: fetchError } = await apiFetchVehiculos();
-      // Lanza un error si fetchVehiculos falló
-      if (fetchError) throw fetchError; // fetchError ya debería ser un Error o tener .message
-      // Filtra los vehículos no vendidos para la lista de inventario
+      if (fetchError) throw fetchError; 
       const inventario = data?.filter(v => !v.vendido) || [];
       setVehiculos(inventario);
       console.log("[useVehicles] Vehículos de inventario cargados:", inventario.length);
-    } catch (err: unknown) { // Captura errores lanzados
+    } catch (err: unknown) { 
       console.error("Error cargando vehículos de inventario:", err);
       const errorMsg = getErrorMessage(err);
       setGeneralError(errorMsg);
@@ -80,12 +78,12 @@ export function useVehicles() {
   }, []);
 
   const loadVehiculosVendidos = useCallback(async (month?: number, year?: number) => {
+    // ... (sin cambios)
     const currentMonth = month ?? filtroMes;
     const currentYear = year ?? filtroAnio;
     console.log(`[useVehicles] Cargando vehículos vendidos para ${currentMonth}/${currentYear}...`);
     setIsLoadingVendidos(true);
     try {
-      // apiFetchVehiculosVendidos devuelve Vehiculo[] o lanza error
       const data = await apiFetchVehiculosVendidos({ month: currentMonth, year: currentYear });
       setVehiculosVendidos(data);
       console.log("[useVehicles] Vehículos vendidos cargados:", data.length);
@@ -99,6 +97,7 @@ export function useVehicles() {
   }, [filtroMes, filtroAnio]);
 
   useEffect(() => {
+    // ... (sin cambios)
     console.log(`[useVehicles] useEffect - Pestaña activa: ${activeTab}`);
     if (activeTab === 'inventario') {
       loadVehiculos();
@@ -111,18 +110,46 @@ export function useVehicles() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   }, []);
 
-  const handleImageChange = useCallback((file: File | null) => {
-    setImageFile(file);
-    if (file) {
-      updateFormField('imagenes', '');
+  // Manejar cambio en input de archivos múltiples
+  const handleImageChange = useCallback((files: FileList | null) => {
+    if (files) {
+      // Añadir nuevos archivos a la lista, evitando duplicados si se seleccionan de nuevo
+      // (aunque el input file típicamente reemplaza la selección)
+      const newFilesArray = Array.from(files);
+      setImageFiles(prevFiles => {
+        // Simple concatenación por ahora, se pueden añadir lógicas más complejas
+        // para evitar duplicados exactos si es necesario.
+        const combined = [...prevFiles, ...newFilesArray];
+        // Limitar cantidad de imágenes si es necesario
+        // const MAX_IMAGES = 10;
+        // return combined.slice(0, MAX_IMAGES);
+        return combined;
+      });
     }
-  }, [updateFormField]);
+  }, []);
+
+  // Quitar un archivo nuevo de la lista de subida
+  const handleRemoveNewImage = useCallback((indexToRemove: number) => {
+    setImageFiles(prevFiles => prevFiles.filter((_, index) => index !== indexToRemove));
+  }, []);
+
+  // Marcar una URL existente para eliminación (y quitarla de la preview)
+  const handleRemoveExistingImage = useCallback((indexToRemove: number) => {
+    const urlToRemove = existingImageUrls[indexToRemove];
+    if (urlToRemove) {
+      setImageUrlsToDelete(prev => [...prev, urlToRemove]);
+      setExistingImageUrls(prevUrls => prevUrls.filter((_, index) => index !== indexToRemove));
+    }
+  }, [existingImageUrls]);
+
 
   const clearForm = useCallback(() => {
     console.log("[useVehicles] Limpiando formulario.");
     setFormData(initialFormData);
-    setImageFile(null);
     setEditId(null);
+    setImageFiles([]);
+    setExistingImageUrls([]);
+    setImageUrlsToDelete([]);
   }, []);
 
   const startEdit = useCallback((veh: Vehiculo) => {
@@ -138,31 +165,78 @@ export function useVehicles() {
       color: veh.color || "", lugar_matricula: veh.lugar_matricula || "",
       reporte: veh.reporte ?? false, prenda: veh.prenda ?? false,
       motor: veh.motor || "", estado: veh.estado || "disponible",
-      imagenes: veh.imagenes || "", placa: veh.placa || "",
+      imagenes: veh.imagenes || "", // Este se usa para la lógica de 'imageUrl' en submit
+      placa: veh.placa || "",
     });
-    setImageFile(null);
+    setImageFiles([]); // Limpiar selección de archivos nuevos
+    setExistingImageUrls(getAllImageUrlsFromString(veh.imagenes)); // Parsear string a array de URLs
+    setImageUrlsToDelete([]); // Limpiar URLs a eliminar
   }, []);
 
-  const uploadImage = async (file: File): Promise<string> => {
-    const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-    const filePath = `autos/${fileName}`;
-    console.log("[useVehicles] Subiendo imagen a:", filePath);
-    const { error: uploadError } = await supabase.storage
-      .from("escuderia-autos")
-      .upload(filePath, file, { cacheControl: '3600', upsert: false });
+  // Sube un array de archivos y devuelve un array de URLs
+  const uploadImages = async (files: File[]): Promise<string[]> => {
+    if (files.length === 0) return [];
+    console.log(`[useVehicles] Subiendo ${files.length} imágenes...`);
+    
+    const uploadPromises = files.map(async (file) => {
+      const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      const filePath = `autos/${fileName}`;
+      const { error: uploadError } = await supabase.storage
+        .from("escuderia-autos")
+        .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
-    if (uploadError) {
-      console.error("Error subiendo imagen a Supabase Storage:", uploadError);
-      throw new Error(getErrorMessage(uploadError)); // Lanza Error estándar
-    }
-    const { data: urlData } = supabase.storage.from("escuderia-autos").getPublicUrl(filePath);
-    if (!urlData?.publicUrl) {
-      console.error("No se pudo obtener la URL pública después de subir:", filePath);
-      throw new Error("No se pudo obtener la URL pública de la imagen subida.");
-    }
-    console.log("[useVehicles] Imagen subida, URL pública:", urlData.publicUrl);
-    return urlData.publicUrl;
+      if (uploadError) {
+        console.error("Error subiendo imagen a Supabase Storage:", uploadError);
+        throw new Error(getErrorMessage(uploadError));
+      }
+      const { data: urlData } = supabase.storage.from("escuderia-autos").getPublicUrl(filePath);
+      if (!urlData?.publicUrl) {
+        console.error("No se pudo obtener la URL pública después de subir:", filePath);
+        throw new Error("No se pudo obtener la URL pública de la imagen subida.");
+      }
+      return urlData.publicUrl;
+    });
+
+    const uploadedUrls = await Promise.all(uploadPromises);
+    console.log("[useVehicles] Imágenes subidas, URLs:", uploadedUrls);
+    return uploadedUrls;
   };
+  
+  // Elimina imágenes de Supabase Storage
+  const deleteImagesFromStorage = async (urls: string[]) => {
+    if (urls.length === 0) return;
+    console.log("[useVehicles] Eliminando imágenes de Storage:", urls);
+    const pathsToDelete: string[] = [];
+    urls.forEach(url => {
+      try {
+        if (url.includes('/storage/v1/object/public/')) {
+            const urlParts = url.split('/public/');
+            if (urlParts.length > 1) {
+                const path = urlParts[1];
+                // Asegurarse que el path comience con el nombre del bucket correcto si está incluido
+                if (path.startsWith('escuderia-autos/')) {
+                   pathsToDelete.push(path.substring('escuderia-autos/'.length));
+                } else {
+                   pathsToDelete.push(path); // Asumir que es el path dentro del bucket
+                }
+            }
+        }
+      } catch (e) {
+        console.warn(`Error parseando URL para eliminar de storage: ${url}`, e);
+      }
+    });
+
+    if (pathsToDelete.length > 0) {
+      const { data, error } = await supabase.storage.from('escuderia-autos').remove(pathsToDelete);
+      if (error) {
+        console.warn("Advertencia: No se pudieron eliminar algunas imágenes de Storage:", getErrorMessage(error));
+        // No lanzar error crítico aquí, solo advertir.
+      } else {
+        console.log("Imágenes eliminadas de Storage exitosamente:", data);
+      }
+    }
+  };
+
 
   const handleSubmit = async () => {
     console.log("[useVehicles] Iniciando handleSubmit:", editId ? `Editando ID ${editId}` : "Creando nuevo");
@@ -172,33 +246,47 @@ export function useVehicles() {
     const toastId = toast.loading(editId ? 'Actualizando vehículo...' : 'Creando vehículo...');
 
     try {
-      let imageUrl: string | null = formData.imagenes || null;
-      if (imageFile) {
-        console.log("[useVehicles] Subiendo nueva imagen...");
-        imageUrl = await uploadImage(imageFile);
-      } else {
-        console.log("[useVehicles] No hay nuevo archivo de imagen, usando URL existente (si hay):", imageUrl);
+      let finalImageUrls: string[] = [...existingImageUrls]; // Empezar con las existentes que no se marcaron para borrar
+
+      // 1. Subir nuevos archivos si los hay
+      if (imageFiles.length > 0) {
+        const newUploadedUrls = await uploadImages(imageFiles);
+        finalImageUrls = [...finalImageUrls, ...newUploadedUrls];
       }
+      
+      // 2. Si se está editando, eliminar las imágenes marcadas para borrar de Supabase Storage
+      if (editId && imageUrlsToDelete.length > 0) {
+        await deleteImagesFromStorage(imageUrlsToDelete);
+      }
+
+      // 3. Formatear el array de URLs a un string para la BD
+      //    (ej: "{url1,url2,url3}" o un JSON string si prefieres)
+      //    Usaremos el formato de llaves y comas por consistencia con getFirstImageUrlFromString
+      const imagenesString = finalImageUrls.length > 0 ? `{${finalImageUrls.map(url => `"${url}"`).join(',')}}` : null;
 
       const dataToSend: VehiculoFormData = {
         ...formData,
-        imagenes: imageUrl || "",
+        imagenes: imagenesString || "", // Asegurar que sea string o string vacío, no null aquí para el tipo
       };
+      
+      // Validar que haya al menos una imagen si se está creando
+      if (!editId && finalImageUrls.length === 0) {
+        throw new Error("Debes subir al menos una imagen para el nuevo vehículo.");
+      }
+
 
       if (editId) {
         console.log("[useVehicles] Llamando a apiUpdateVehiculo para ID:", editId, "con datos:", dataToSend);
-        // apiUpdateVehiculo devuelve el vehículo actualizado o lanza error
-        await apiUpdateVehiculo(editId, dataToSend);
+        await apiUpdateVehiculo(editId, dataToSend); // El servicio ya maneja el string de imágenes
         toast.success('Vehículo actualizado!', { id: toastId });
       } else {
-        console.log("[useVehicles] Llamando a apiCreateVehiculo con datos:", dataToSend, "y URL de imagen:", imageUrl);
-        // apiCreateVehiculo devuelve el vehículo creado o lanza error
-        await apiCreateVehiculo(dataToSend, imageUrl);
+        console.log("[useVehicles] Llamando a apiCreateVehiculo con datos:", dataToSend);
+        // apiCreateVehiculo ahora solo necesita VehiculoFormData, el string de imágenes ya está en dataToSend.imagenes
+        await apiCreateVehiculo(dataToSend, null); // El segundo argumento de imagen individual ya no es necesario
         toast.success('Vehículo creado!', { id: toastId });
       }
       clearForm();
-      await loadVehiculos(); // Siempre recargar inventario
-      // Siempre recargar vendidos por si la edición afecta el estado o si se crea y luego se vende rápido
+      await loadVehiculos(); 
       await loadVehiculosVendidos();
 
     } catch (err: unknown) {
@@ -214,49 +302,25 @@ export function useVehicles() {
 
   const handleDelete = async (id: number): Promise<void> => {
     console.log("[useVehicles] Iniciando handleDelete para ID:", id);
-    // Intenta encontrar el vehículo en cualquiera de las listas para el mensaje toast
     const vehicleToDelete = vehiculos.find(v => v.id === id) || vehiculosVendidos.find(v => v.id === id);
     const toastId = toast.loading(`Eliminando ${vehicleToDelete?.marca || 'vehículo'} ${vehicleToDelete?.linea || ''}...`);
     setGeneralError(null);
 
     try {
       console.log("[useVehicles] Llamando a apiDeleteVehiculo para ID:", id);
-      // apiDeleteVehiculo lanza error si falla
-      await apiDeleteVehiculo(id);
+      
+      // Obtener URLs de imágenes ANTES de borrar el registro de la BD
+      const urlsToDeleteFromStorage = vehicleToDelete?.imagenes ? getAllImageUrlsFromString(vehicleToDelete.imagenes) : [];
 
-      // Lógica opcional para eliminar imagen de Storage
-      if (vehicleToDelete?.imagenes) {
-        try {
-          let pathToDelete: string | undefined;
-          // Intenta parsear la URL de forma más robusta
-          if (vehicleToDelete.imagenes.includes('/storage/v1/object/public/')) {
-              const urlParts = vehicleToDelete.imagenes.split('/public/');
-              if (urlParts.length > 1) {
-                  pathToDelete = urlParts[1];
-              }
-          }
+      await apiDeleteVehiculo(id); // Eliminar de la BD
 
-          if (pathToDelete) {
-            const [bucketName, ...filePathParts] = pathToDelete.split('/');
-            const filePath = filePathParts.join('/');
-            // Asegúrate que el bucketName sea el correcto
-            if (bucketName && filePath && bucketName === "escuderia-autos") {
-              console.log(`[useVehicles] Eliminando imagen de Storage: Bucket: ${bucketName}, Path: ${filePath}`);
-              await supabase.storage.from(bucketName).remove([filePath]);
-            } else {
-               console.warn("[useVehicles] No se pudo determinar el bucket o path correcto para eliminar imagen:", vehicleToDelete.imagenes);
-            }
-          } else {
-             console.warn("[useVehicles] URL de imagen no tiene el formato esperado para extraer el path:", vehicleToDelete.imagenes);
-          }
-        } catch (storageError: unknown) {
-          console.warn("Advertencia: No se pudo eliminar la imagen de Storage:", getErrorMessage(storageError));
-        }
+      // Eliminar imágenes de Storage
+      if (urlsToDeleteFromStorage.length > 0) {
+        await deleteImagesFromStorage(urlsToDeleteFromStorage);
       }
 
       toast.success('Vehículo eliminado.', { id: toastId });
       console.log("[useVehicles] Recargando listas después de eliminar...");
-      // Recargar ambas listas ya que un vehículo puede ser eliminado desde cualquiera
       await loadVehiculos();
       await loadVehiculosVendidos();
     } catch (err: unknown) {
@@ -264,20 +328,18 @@ export function useVehicles() {
       const errorMsg = getErrorMessage(err);
       setGeneralError(errorMsg);
       toast.error(errorMsg, { id: toastId });
-      // Propagar el error para que el componente que llama (si es necesario) sepa que falló
-      // Esto es importante para que el 'finally' en VehicleList funcione correctamente
       throw err;
     }
-    // El spinner del botón se maneja en VehicleList (en el finally de su handler local)
   };
 
   const handleMarkAsSold = async (id: number): Promise<void> => {
+    // ... (sin cambios)
     console.log("[useVehicles] Iniciando handleMarkAsSold para ID:", id);
     const vehicleToSell = vehiculos.find(v => v.id === id);
     if (!vehicleToSell) {
       toast.error("Vehículo no encontrado en inventario.");
       console.warn("[useVehicles] Vehículo no encontrado en inventario local, ID:", id);
-      return; // Retorna explícitamente void si no se encuentra
+      return; 
     }
 
     const toastId = toast.loading(`Marcando ${vehicleToSell.marca} ${vehicleToSell.linea} como vendido...`);
@@ -285,11 +347,9 @@ export function useVehicles() {
 
     try {
       console.log("[useVehicles] Llamando a apiMarcarComoVendido para ID:", id);
-      // apiMarcarComoVendido devuelve el vehículo actualizado o lanza error
       await apiMarcarComoVendido(id);
       toast.success('Vehículo marcado como vendido.', { id: toastId });
       console.log("[useVehicles] Recargando listas después de marcar como vendido...");
-      // Recargar ambas listas ya que afecta a ambas
       await loadVehiculos();
       await loadVehiculosVendidos();
     } catch (err: unknown) {
@@ -297,20 +357,15 @@ export function useVehicles() {
       const errorMsg = getErrorMessage(err);
       setGeneralError(errorMsg);
       toast.error(errorMsg, { id: toastId });
-      // Propagar el error para el finally en el componente que llama
       throw err;
     }
-    // El spinner del botón se maneja en VehicleList (en el finally de su handler local)
   };
 
-  // --- Valores de Retorno del Hook ---
   return {
-    // Estados
     vehiculos,
     isLoadingList,
     generalError,
     formData,
-    imageFile,
     editId,
     isSubmitting,
     vehiculosVendidos,
@@ -321,10 +376,15 @@ export function useVehicles() {
     setFiltroMes,
     filtroAnio,
     setFiltroAnio,
-    loadVehiculosVendidos, // Exportar si se llama desde fuera (ej. botón aplicar filtros)
-
-    // Handlers
+    loadVehiculosVendidos, 
+    
+    // Nuevos estados y handlers para imágenes múltiples
+    imageFiles,
+    existingImageUrls,
     handleImageChange,
+    handleRemoveNewImage,
+    handleRemoveExistingImage,
+
     updateFormField,
     handleSubmit,
     handleDelete,
