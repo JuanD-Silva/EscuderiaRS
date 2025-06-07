@@ -1,7 +1,7 @@
 // src/app/admin/components/FormField.tsx
 import React, { ChangeEvent } from 'react';
 import Image from 'next/image';
-import { FiPaperclip, FiTrash2, FiUploadCloud } from 'react-icons/fi'; // Para iconos
+import { FiTrash2, FiUploadCloud } from 'react-icons/fi'; // Para iconos
 
 type FormFieldValue = string | number | boolean | File | FileList | null; // FileList para múltiples archivos
 

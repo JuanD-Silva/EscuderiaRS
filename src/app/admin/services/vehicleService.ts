@@ -22,7 +22,7 @@ function getErrorMessage(error: unknown): string {
       if (errorString !== '[object Object]') {
           return errorString;
       }
-  } catch (_e) { /* Ignorar */ }
+  } catch  { /* Ignorar */ }
   return "Ocurrió un error desconocido.";
 }
 
@@ -69,7 +69,7 @@ function parseAndValidateFormData(formData: VehiculoFormData): Partial<Vehiculo>
 
 // createVehiculo ahora no necesita el argumento imageUrl separado,
 // ya que formData.imagenes contendrá el string de URLs formateado desde el hook.
-export async function createVehiculo(formData: VehiculoFormData, _imageUrl_deprecated: string | null /*No usado*/): Promise<Vehiculo> {
+export async function createVehiculo(formData: VehiculoFormData): Promise<Vehiculo> {
   const parsedData: Partial<Vehiculo> = parseAndValidateFormData(formData);
   parsedData.vendido = false; // Por defecto no está vendido al crear
   delete parsedData.id;

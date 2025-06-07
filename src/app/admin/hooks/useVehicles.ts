@@ -33,7 +33,7 @@ function getErrorMessage(error: unknown): string {
   try {
     const errorString = String(error);
     if (errorString !== '[object Object]') return errorString;
-  } catch (_e) { /* Ignorar */ }
+  } catch { /* Ignorar */ }
   return "Ocurrió un error desconocido.";
 }
 
@@ -282,7 +282,7 @@ export function useVehicles() {
       } else {
         console.log("[useVehicles] Llamando a apiCreateVehiculo con datos:", dataToSend);
         // apiCreateVehiculo ahora solo necesita VehiculoFormData, el string de imágenes ya está en dataToSend.imagenes
-        await apiCreateVehiculo(dataToSend, null); // El segundo argumento de imagen individual ya no es necesario
+        await apiCreateVehiculo(dataToSend); // El segundo argumento de imagen individual ya no es necesario
         toast.success('Vehículo creado!', { id: toastId });
       }
       clearForm();

@@ -11,7 +11,7 @@ import { VehicleCard } from "./components/VehicleCard";
 import { SortDropdown, SortOption } from "./components/SortDropdown";
 import { VehicleDetailModal } from "./components/VehicleDetailModal"; 
 
-import { FiFilter, FiImage } from "react-icons/fi"; // FiImage para placeholder
+import { FiFilter } from "react-icons/fi"; // FiImage para placeholder
 import { ClipLoader } from "react-spinners";
 
 // --- Constantes y Tipos ---

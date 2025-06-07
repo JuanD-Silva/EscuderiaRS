@@ -47,7 +47,7 @@ function getErrorMessage(error: unknown): string {
           return errorString;
       }
   // eslint-disable-next-line no-empty
-  } catch (_e) { // <--- CAMBIO: Prefijo '_' para 'e' no usado
+  } catch { // <--- CAMBIO: Prefijo '_' para 'e' no usado
      /* Ignorar error de conversión */
   }
   return "Ocurrió un error desconocido.";

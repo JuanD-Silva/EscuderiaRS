@@ -1,11 +1,11 @@
 // src/app/catalogo/components/VehicleDetailModal.tsx
 "use client";
 
-import React, { useState } from 'react'; // Importar useState si se va a usar para cambiar imagen principal
+import React, { useState, useEffect } from 'react'; // Importar useEffect
 import Image from 'next/image';
-import { Vehiculo } from '@/app/admin/lib/supabase'; // Ajusta la ruta si es necesario
-import { getAllImageUrlsFromString, formatPrice } from '@/app/lib/utils'; // Cambiado a getAllImageUrlsFromString
-import { FiX, FiCalendar, FiCheckCircle, FiXCircle, FiAlertTriangle, FiTag, FiCpu, FiSettings, FiMapPin, FiInfo, FiFileText, FiFlag, FiShield, FiDollarSign, FiTrendingUp, FiImage } from 'react-icons/fi'; // FiImage para placeholder
+import { Vehiculo } from '@/app/admin/lib/supabase';
+import { getAllImageUrlsFromString, formatPrice } from '@/app/lib/utils';
+import { FiX, FiCalendar, FiCheckCircle, FiXCircle, FiAlertTriangle, FiTag, FiCpu, FiSettings, FiMapPin, FiInfo, FiFileText, FiFlag, FiShield, FiDollarSign, FiTrendingUp, FiImage } from 'react-icons/fi';
 import { FaCar, FaTachometerAlt, FaPalette, FaRoad, FaWhatsapp } from 'react-icons/fa';
 
 interface VehicleDetailModalProps {
@@ -36,33 +36,36 @@ const formatDate = (dateString: string | null | undefined): string => {
 };
 
 export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({ isOpen, onClose, vehicle }) => {
-  if (!isOpen || !vehicle) return null;
-
-  // Obtener todas las URLs de las imágenes
-  const allImageUrls = getAllImageUrlsFromString(vehicle.imagenes);
+  // CORRECCIÓN: Todos los hooks se mueven al principio del componente, ANTES de cualquier return.
+  const allImageUrls = getAllImageUrlsFromString(vehicle?.imagenes);
   
-  // Estado para la imagen principal actual (si quieres hacer la galería interactiva)
-  const [mainImageUrl, setMainImageUrl] = useState<string>(allImageUrls.length > 0 ? allImageUrls[0] : '/placeholder.png');
+  const [mainImageUrl, setMainImageUrl] = useState<string>(
+    allImageUrls.length > 0 ? allImageUrls[0] : '/placeholder.png'
+  );
 
-  // Actualizar la imagen principal si el vehículo cambia y tiene imágenes
-  React.useEffect(() => {
+  useEffect(() => {
+    // Cuando el vehículo (o su visibilidad) cambia, reseteamos la imagen principal a la primera de la lista.
     const newAllImageUrls = getAllImageUrlsFromString(vehicle?.imagenes);
     setMainImageUrl(newAllImageUrls.length > 0 ? newAllImageUrls[0] : '/placeholder.png');
   }, [vehicle]);
 
+  // CORRECCIÓN: El "early return" se mueve aquí, después de los hooks.
+  if (!isOpen || !vehicle) {
+    return null;
+  }
 
-  const numeroWhatsApp = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "573124423639"; // Fallback
+  // El resto de la lógica del componente que depende de 'vehicle' va aquí.
+  const numeroWhatsApp = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "573124423639";
   const mensajeWhatsApp = `Hola, estoy interesado en el ${encodeURIComponent(vehicle.marca || 'vehículo')} ${encodeURIComponent(vehicle.linea || '')} ${vehicle.modelo || ''} (ID: ${vehicle.id}, Placa: ${vehicle.placa || 'N/A'}). Quisiera más información.`;
   const whatsappLink = `https://wa.me/${numeroWhatsApp}?text=${mensajeWhatsApp}`;
 
-  const detailItemClass = "py-2 px-3 even:bg-gray-800/50 odd:bg-gray-800/20 rounded-md flex"; // Añadido flex para alinear items
-  const labelClass = "font-semibold text-gray-400 w-1/3 sm:w-1/4 flex-shrink-0"; // flex-shrink-0 para evitar que se encoja
-  const valueClass = "text-gray-200 flex-grow"; // flex-grow para que ocupe el espacio restante
+  const detailItemClass = "py-2 px-3 even:bg-gray-800/50 odd:bg-gray-800/20 rounded-md flex";
+  const labelClass = "font-semibold text-gray-400 w-1/3 sm:w-1/4 flex-shrink-0";
+  const valueClass = "text-gray-200 flex-grow";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 transition-opacity duration-300 ease-in-out animate-fadeIn">
       <div className="bg-gray-900 rounded-xl shadow-2xl border border-gray-700 w-full max-w-3xl max-h-[95vh] flex flex-col animate-slideUp">
-        {/* Header del Modal */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700 sticky top-0 bg-gray-900 z-10 rounded-t-xl">
           <h2 className="text-xl lg:text-2xl font-bold text-red-500 truncate" title={`${vehicle.marca} ${vehicle.linea} ${vehicle.modelo}`}>
             {vehicle.marca} {vehicle.linea} <span className="text-gray-400 font-medium">{vehicle.modelo}</span>
@@ -76,15 +79,13 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({ isOpen, 
           </button>
         </div>
 
-        {/* Contenido del Modal (Scrollable) */}
         <div className="p-5 sm:p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-800/50 flex-grow">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Columna de Imagen y Precio */}
             <div className="space-y-4">
               {allImageUrls.length > 0 ? (
                 <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-gray-700 shadow-lg">
                   <Image
-                    src={mainImageUrl} // Usar el estado de la imagen principal
+                    src={mainImageUrl}
                     alt={`Imagen principal de ${vehicle.marca} ${vehicle.linea}`}
                     fill
                     sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -109,15 +110,14 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({ isOpen, 
                 </div>
               )}
 
-              {/* Galería de miniaturas (si hay más de una imagen) */}
               {allImageUrls.length > 1 && (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 gap-2"> {/* Ajustado a 4 para mejor visualización */}
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 gap-2">
                   {allImageUrls.map((url, index) => (
                     <button
-                      key={url + index} // Usar url + index para key más única si las urls pueden repetirse
+                      key={url + index}
                       className={`relative aspect-square rounded overflow-hidden border-2 transition-all
                                   ${url === mainImageUrl ? 'border-red-500 shadow-md' : 'border-transparent hover:border-red-400'}`}
-                      onClick={() => setMainImageUrl(url)} // Cambiar imagen principal al hacer clic
+                      onClick={() => setMainImageUrl(url)}
                     >
                       <Image
                         src={url}
@@ -154,8 +154,7 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({ isOpen, 
               </a>
             </div>
 
-            {/* Columna de Detalles */}
-            <div className="space-y-1 text-sm"> {/* Reducido space-y para más densidad */}
+            <div className="space-y-1 text-sm">
               <h3 className="text-lg font-semibold text-gray-200 border-b border-gray-700 pb-2 mb-3">Detalles del Vehículo</h3>
               
               <div className={detailItemClass}>
@@ -208,7 +207,7 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({ isOpen, 
               {vehicle.descripcion && (
                 <>
                   <h4 className="text-md font-semibold text-gray-300 pt-3 mt-4 border-t border-gray-700/50">Descripción Adicional</h4>
-                  <div className="bg-gray-800/30 p-3 rounded-md mt-1"> {/* Quitado detailItemClass para que no tenga padding extra */}
+                  <div className="bg-gray-800/30 p-3 rounded-md mt-1">
                     <p className="text-gray-300 whitespace-pre-line leading-relaxed">{vehicle.descripcion}</p>
                   </div>
                 </>

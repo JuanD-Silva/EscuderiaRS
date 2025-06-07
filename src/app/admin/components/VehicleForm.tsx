@@ -1,14 +1,14 @@
 // src/app/admin/components/VehicleForm.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FormField } from './FormField';
 import { VehiculoFormData, VEHICLE_STATUS_OPTIONS } from '../lib/supabase';
 import { ClipLoader } from 'react-spinners';
-import { FiPlusCircle, FiXCircle } from 'react-icons/fi';
+
 
 interface VehicleFormProps {
   formData: VehiculoFormData;
   onUpdateField: <K extends keyof VehiculoFormData>(field: K, value: VehiculoFormData[K]) => void;
-  // Para múltiples imágenes
+  // Para múltiples imágenes    
   imageFiles: File[]; 
   existingImageUrls: string[]; 
   onImageChange: (files: FileList | null) => void; 
@@ -41,13 +41,13 @@ export const VehicleForm: React.FC<VehicleFormProps> = ({
     const newFilePreviews = imageFiles.map(file => ({
       url: URL.createObjectURL(file),
       name: file.name,
-      type: 'new' as 'new',
+      type: 'new' as const,
     }));
 
     const existingUrlPreviews = existingImageUrls.map(url => ({
       url: url,
       name: url.substring(url.lastIndexOf('/') + 1), // Extraer nombre de archivo de URL
-      type: 'existing' as 'existing',
+      type: 'existing' as const,
     }));
     
     setImagePreviews([...existingUrlPreviews, ...newFilePreviews]);

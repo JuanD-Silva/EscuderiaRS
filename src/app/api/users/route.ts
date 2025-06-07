@@ -33,7 +33,7 @@ function getErrorMessage(error: unknown): string {
           return errorString;
       }
   // eslint-disable-next-line no-empty
-  } catch (_e) { // <--- CAMBIO: Prefijar 'e' no usado con '_'
+  } catch { // <--- CAMBIO: Prefijar 'e' no usado con '_'
      /* Ignorar error de conversión */
   }
   return "Ocurrió un error desconocido.";

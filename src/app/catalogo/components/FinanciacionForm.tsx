@@ -2,69 +2,49 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form'; // SubmitHandler ya no es necesario importar explícitamente aquí
+import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Vehiculo } from '@/app/admin/lib/supabase'; // Ajusta la ruta si es necesario
+import { Vehiculo } from '@/app/admin/lib/supabase';
 import toast from 'react-hot-toast';
 import { ClipLoader } from 'react-spinners';
-import { formatPrice } from '@/app/lib/utils'; // Ajusta la ruta si es necesario
+import { formatPrice } from '@/app/lib/utils';
 
-// Esquema de validación con Zod (Reintroduciendo todos los campos con correcciones)
+// Esquema de Zod con correcciones
 const financiacionSchema = z.object({
   nombreCompleto: z.string().min(3, "Nombre es requerido y debe tener al menos 3 caracteres."),
   cedula: z.string().min(5, "Cédula es requerida y debe tener al menos 5 caracteres.").regex(/^\d+$/, "Cédula debe contener solo números."),
   email: z.string().email("Email inválido."),
   telefono: z.string().min(7, "Teléfono es requerido y debe tener al menos 7 caracteres.").regex(/^[\d\s()+-]+$/, "Teléfono inválido."),
-  ciudad: z.string().trim().optional().default(""), // String opcional, default a vacío
+  
+  ciudad: z.string().trim().optional(),
+  mensaje: z.string().trim().optional(),
+  aceptaVehiculoPartePago: z.boolean().optional(),
+  vehiculoPartePagoMarca: z.string().trim().optional(),
+  vehiculoPartePagoLinea: z.string().trim().optional(),
+  vehiculoPartePagoPlaca: z.string().trim().optional(),
+  
+  // CORRECCIÓN: Simplificado para que Zod espere un número, ya que react-hook-form lo proporcionará.
+  montoFinanciar: z.number({ invalid_type_error: "Monto debe ser un número." })
+    .positive("Monto debe ser positivo.")
+    .optional()
+    .or(z.literal(undefined)), // Aceptar explícitamente undefined si el campo está vacío
 
-  montoFinanciar: z.preprocess(
-    (val) => {
-      if (val === "" || val === null || val === undefined) return undefined;
-      const cleanedVal = String(val).replace(/\D/g, '');
-      if (cleanedVal === "") return undefined;
-      const num = Number(cleanedVal);
-      return isNaN(num) ? undefined : num;
-    },
-    z.union([
-      z.number({invalid_type_error: "Monto debe ser un número."}).positive("Monto debe ser positivo."),
-      z.literal(undefined) // Explícitamente permite undefined
-    ]).optional() // Hace el campo opcional en la entrada
-  ),
-
-  mensaje: z.string().trim().optional().default(""), // String opcional, default a vacío
-
-  aceptaVehiculoPartePago: z.boolean().default(false), // Boolean con default
-
-  // Campos condicionales (deben ser opcionales si dependen de aceptaVehiculoPartePago)
-  vehiculoPartePagoMarca: z.string().trim().optional().default(""),
-  vehiculoPartePagoLinea: z.string().trim().optional().default(""),
-  vehiculoPartePagoAnio: z.preprocess(
-    (val) => {
-      if (val === "" || val === null || val === undefined) return undefined;
-      const cleanedVal = String(val).replace(/\D/g, '');
-      if (cleanedVal === "") return undefined;
-      const num = Number(cleanedVal);
-      return isNaN(num) ? undefined : num;
-    },
-    z.union([
-      z.number({invalid_type_error: "Año debe ser un número."})
-       .min(1980, "Año debe ser mayor o igual a 1980.")
-       .max(new Date().getFullYear() + 1, `Año no puede ser mayor a ${new Date().getFullYear() + 1}.`),
-      z.literal(undefined) // Explícitamente permite undefined
-    ]).optional() // Hace el campo opcional en la entrada
-  ),
-  vehiculoPartePagoPlaca: z.string().trim().optional().default(""),
+  // CORRECCIÓN: Simplificado de la misma manera.
+  vehiculoPartePagoAnio: z.number({ invalid_type_error: "Año debe ser un número." })
+    .min(1980, "Año debe ser mayor o igual a 1980.")
+    .max(new Date().getFullYear() + 1, `Año no puede ser mayor a ${new Date().getFullYear() + 1}.`)
+    .optional()
+    .or(z.literal(undefined)),
 
 }).refine(data => {
-  if (!data.aceptaVehiculoPartePago) return true; // Si no acepta, la validación de esta parte pasa
-  // Si acepta, marca, línea y año del vehículo parte pago son requeridos
+  if (!data.aceptaVehiculoPartePago) return true;
   return !!(data.vehiculoPartePagoMarca && data.vehiculoPartePagoMarca.trim() !== "" &&
             data.vehiculoPartePagoLinea && data.vehiculoPartePagoLinea.trim() !== "" &&
-            data.vehiculoPartePagoAnio !== undefined); // Chequear que el año tenga un valor numérico
+            data.vehiculoPartePagoAnio !== undefined);
 }, {
   message: "Si deseas poner un vehículo como parte de pago, debes ingresar su Marca, Línea y Año.",
-  path: ["vehiculoPartePagoMarca"], // O donde quieras mostrar este error general del refine
+  path: ["vehiculoPartePagoMarca"],
 });
 
 export type FinanciacionFormData = z.infer<typeof financiacionSchema>;
@@ -81,20 +61,19 @@ export const FinanciacionForm: React.FC<FinanciacionFormProps> = ({ vehiculoInte
   const { 
     register, 
     handleSubmit, 
-    control, // Aunque no se usa explícitamente con <Controller>, es parte del hook
     watch, 
     formState: { errors } 
   } = useForm<FinanciacionFormData>({
-    resolver: zodResolver(financiacionSchema) as any,
+    resolver: zodResolver(financiacionSchema), 
     defaultValues: {
       nombreCompleto: "",
       cedula: "",
       email: "",
       telefono: "",
-      ciudad: "", // Coincide con .default("")
-      montoFinanciar: undefined, // Coincide con la unión con z.literal(undefined)
+      ciudad: "",
+      montoFinanciar: undefined, 
       mensaje: "",
-      aceptaVehiculoPartePago: false, // Coincide con z.boolean().default(false)
+      aceptaVehiculoPartePago: false,
       vehiculoPartePagoMarca: "",
       vehiculoPartePagoLinea: "",
       vehiculoPartePagoAnio: undefined,
@@ -104,7 +83,7 @@ export const FinanciacionForm: React.FC<FinanciacionFormProps> = ({ vehiculoInte
 
   const aceptaVehiculo = watch("aceptaVehiculoPartePago");
 
-  const onSubmitHandler = async (data: FinanciacionFormData) => {
+  const onSubmitHandler: SubmitHandler<FinanciacionFormData> = async (data) => {
     setIsSubmitting(true);
     const vehiculoNombre = `${vehiculoInteres.marca || ''} ${vehiculoInteres.linea || ''} ${vehiculoInteres.modelo || ''} (ID: ${vehiculoInteres.id})`;
     try {
@@ -121,7 +100,7 @@ export const FinanciacionForm: React.FC<FinanciacionFormProps> = ({ vehiculoInte
   const errorTextClass = "mt-1 text-xs text-red-400";
 
   return (
-    <form onSubmit={handleSubmit(onSubmitHandler as any)} className="space-y-5">
+    <form onSubmit={handleSubmit(onSubmitHandler)} className="space-y-5">
       <div>
         <h3 className="text-lg font-semibold text-gray-100 mb-1">
           Solicitud de Financiación para:
@@ -167,7 +146,8 @@ export const FinanciacionForm: React.FC<FinanciacionFormProps> = ({ vehiculoInte
         </div>
         <div>
           <label htmlFor="montoFinanciar" className="block text-sm font-medium text-gray-300 mb-1">Monto a Financiar (Opcional)</label>
-          <input type="text" inputMode="numeric" id="montoFinanciar" placeholder="Ej: 20000000" {...register("montoFinanciar")} className={`${inputClass} ${errors.montoFinanciar ? 'border-red-500' : ''}`} />
+          {/* CORRECCIÓN: Añadido { valueAsNumber: true } para que react-hook-form parsee el valor como número */}
+          <input type="text" inputMode="numeric" id="montoFinanciar" placeholder="Ej: 20000000" {...register("montoFinanciar", { valueAsNumber: true })} className={`${inputClass} ${errors.montoFinanciar ? 'border-red-500' : ''}`} />
           {errors.montoFinanciar && <p className={errorTextClass}>{errors.montoFinanciar.message}</p>}
         </div>
       </fieldset>
@@ -195,7 +175,6 @@ export const FinanciacionForm: React.FC<FinanciacionFormProps> = ({ vehiculoInte
                 <label htmlFor="vehiculoPartePagoMarca" className="block text-xs font-medium text-gray-400 mb-1">Marca*</label>
                 <input type="text" id="vehiculoPartePagoMarca" {...register("vehiculoPartePagoMarca")} className={`${inputClass} ${errors.vehiculoPartePagoMarca || errors.root?.type === 'custom_refine_vehiculo' ? 'border-red-500' : ''}`} />
                 {errors.vehiculoPartePagoMarca && <p className={errorTextClass}>{errors.vehiculoPartePagoMarca.message}</p>}
-                {/* Mostrar error de refine si existe y no hay error específico de campo */}
                 {errors.root?.message && errors.root.type === 'custom_refine_vehiculo' && !errors.vehiculoPartePagoMarca && <p className={errorTextClass}>{errors.root.message}</p>}
               </div>
               <div>
@@ -207,7 +186,8 @@ export const FinanciacionForm: React.FC<FinanciacionFormProps> = ({ vehiculoInte
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label htmlFor="vehiculoPartePagoAnio" className="block text-xs font-medium text-gray-400 mb-1">Año*</label>
-                    <input type="number" inputMode="numeric" id="vehiculoPartePagoAnio" {...register("vehiculoPartePagoAnio")} className={`${inputClass} ${errors.vehiculoPartePagoAnio ? 'border-red-500' : ''}`} />
+                    {/* CORRECCIÓN: Añadido { valueAsNumber: true } para que react-hook-form parsee el valor como número */}
+                    <input type="number" inputMode="numeric" id="vehiculoPartePagoAnio" {...register("vehiculoPartePagoAnio", { valueAsNumber: true })} className={`${inputClass} ${errors.vehiculoPartePagoAnio ? 'border-red-500' : ''}`} />
                     {errors.vehiculoPartePagoAnio && <p className={errorTextClass}>{errors.vehiculoPartePagoAnio.message}</p>}
                 </div>
                 <div>
