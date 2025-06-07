@@ -58,7 +58,7 @@ export const authOptions: NextAuthOptions = {
           id: user.id.toString(),
           name: user.username,
         };
-      },
+      },  
     }),
   ],
 
@@ -89,4 +89,5 @@ export const authOptions: NextAuthOptions = {
 // CORRECCIÓN: Se exporta el handler de NextAuth directamente.
 const handler = NextAuth(authOptions);
 
-export { handler as GET, handler as POST };
+export const GET = handler;
+export const POST = handler;
