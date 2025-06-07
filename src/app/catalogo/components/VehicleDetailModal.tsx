@@ -5,8 +5,8 @@ import React, { useState, useEffect } from 'react'; // Importar useEffect
 import Image from 'next/image';
 import { Vehiculo } from '@/app/admin/lib/supabase';
 import { getAllImageUrlsFromString, formatPrice } from '@/app/lib/utils';
-import { FiX, FiCalendar, FiCheckCircle, FiXCircle, FiAlertTriangle, FiTag, FiCpu, FiSettings, FiMapPin, FiInfo, FiFileText, FiFlag, FiShield, FiDollarSign, FiTrendingUp, FiImage } from 'react-icons/fi';
-import { FaCar, FaTachometerAlt, FaPalette, FaRoad, FaWhatsapp } from 'react-icons/fa';
+import { FiX, FiCalendar, FiCheckCircle, FiXCircle, FiAlertTriangle, FiTag, FiCpu, FiSettings, FiMapPin, FiFileText, FiShield, FiImage } from 'react-icons/fi';
+import { FaCar, FaTachometerAlt, FaPalette, FaWhatsapp } from 'react-icons/fa';
 
 interface VehicleDetailModalProps {
   isOpen: boolean;
@@ -30,7 +30,7 @@ const formatDate = (dateString: string | null | undefined): string => {
       month: 'long',
       day: 'numeric',
     });
-  } catch (e) {
+  } catch  {
     return 'Fecha inválida';
   }
 };
