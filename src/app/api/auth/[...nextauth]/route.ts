@@ -1,21 +1,22 @@
-// app/api/auth/[...nextauth]/route.ts
+// src/app/api/auth/[...nextauth]/route.ts
 
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 
+// La creación del cliente de Supabase no cambia
 const supabase = createClient(
   process.env.SUPABASE_URL as string,
   process.env.SUPABASE_SERVICE_ROLE as string
 );
 
+// La configuración de authOptions no cambia
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
 
   providers: [
     CredentialsProvider({
-      // ... (configuración de CredentialsProvider sin cambios) ...
       name: "Credentials",
       credentials: {
         username: { label: "Usuario", type: "text", placeholder: "tu_usuario" },
@@ -62,7 +63,7 @@ export const authOptions: NextAuthOptions = {
   ],
 
   pages: {
-    signIn: "/login",
+    signIn: "/auth/login", // Asegúrate que esta sea la ruta correcta a tu página de login
   },
 
   session: {
@@ -70,38 +71,22 @@ export const authOptions: NextAuthOptions = {
   },
 
   callbacks: {
-    // Solo desestructurar 'token' y 'user' ya que son los únicos que se usan
-    async jwt({ token, user /* account, profile, isNewUser --> eliminados */ }) {
-      // 'user' solo está presente en el primer inicio de sesión después de 'authorize'
+    async jwt({ token, user }) {
       if (user) {
-        // Añadir datos del 'user' (devuelto por authorize) al token JWT
         token.id = user.id;
-        // token.name = user.name; // 'name' ya se añade por defecto
-        // Ejemplo: si tuvieras roles y los devolvieras en authorize:
-        // if ('role' in user && user.role) {
-        //   token.role = user.role;
-        // }
       }
-      // El token se pasa a la siguiente llamada (ej. al callback session o al cliente)
       return token;
     },
-    // Solo desestructurar 'session' y 'token', ya que 'user' no se usa aquí
-    async session({ session, token /* user --> eliminado */ }) {
-      // Asignar datos desde el token JWT procesado a la sesión del cliente
+    async session({ session, token }) {
       if (token && session.user) {
-        // Asegúrate de que 'id' exista en tu tipo JWT extendido (next-auth.d.ts)
         session.user.id = token.id as string;
-        // session.user.name = token.name as string; // 'name' ya debería estar
-        // Ejemplo: si tuvieras roles en el token
-        // if (token.role) {
-        //   session.user.role = token.role as string;
-        // }
       }
-      // La sesión devuelta es la que obtiene el cliente con useSession() o getSession()
       return session;
     },
   },
 };
 
+// CORRECCIÓN: Se exporta el handler de NextAuth directamente.
 const handler = NextAuth(authOptions);
+
 export { handler as GET, handler as POST };
