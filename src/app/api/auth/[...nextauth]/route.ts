@@ -11,8 +11,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE as string
 );
 
-// La configuración de authOptions no cambia
-export const authOptions: NextAuthOptions = {
+// CORRECCIÓN: Se ha eliminado la palabra 'export' de esta constante.
+// Este objeto de configuración no debe ser exportado desde un archivo de ruta.
+const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
 
   providers: [
@@ -58,7 +59,7 @@ export const authOptions: NextAuthOptions = {
           id: user.id.toString(),
           name: user.username,
         };
-      },  
+      },
     }),
   ],
 
@@ -86,8 +87,6 @@ export const authOptions: NextAuthOptions = {
   },
 };
 
-// CORRECCIÓN: Se exporta el handler de NextAuth directamente.
 const handler = NextAuth(authOptions);
 
-export const GET = handler;
-export const POST = handler;
+export { handler as GET, handler as POST };
